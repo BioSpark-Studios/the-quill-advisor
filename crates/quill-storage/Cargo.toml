@@ -1,0 +1,22 @@
+[package]
+name = "quill-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Persistence for The Quill Advisor: global core_db and isolated per-vault vault_db (SQLite/SQLx)."
+
+[dependencies]
+quill-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile.workspace = true
