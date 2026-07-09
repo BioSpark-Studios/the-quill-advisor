@@ -99,6 +99,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn settings_upsert_and_read() {
+        let db = CoreDb::open_in_memory().await.unwrap();
+        assert!(db.get_setting("card:v1").await.unwrap().is_none());
+        db.upsert_setting("card:v1", "{\"stage\":\"active\"}")
+            .await
+            .unwrap();
+        assert_eq!(
+            db.get_setting("card:v1").await.unwrap().as_deref(),
+            Some("{\"stage\":\"active\"}")
+        );
+        db.upsert_setting("card:v1", "{\"stage\":\"renewal\"}")
+            .await
+            .unwrap();
+        assert_eq!(
+            db.get_setting("card:v1").await.unwrap().as_deref(),
+            Some("{\"stage\":\"renewal\"}")
+        );
+    }
+
+    #[tokio::test]
     async fn two_vaults_are_physically_isolated() {
         // Two separate in-memory vaults never see each other's students.
         let vault_a = VaultDb::open_in_memory().await.unwrap();

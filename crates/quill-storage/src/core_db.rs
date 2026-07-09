@@ -194,6 +194,36 @@ impl CoreDb {
         Ok(())
     }
 
+    // --- settings ------------------------------------------------------------
+
+    /// Read a global setting by key.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let row = sqlx::query("SELECT value FROM settings WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| r.get::<String, _>("value")))
+    }
+
+    /// Insert or update a global setting.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn upsert_setting(&self, key: &str, value: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO settings (key, value) VALUES (?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     // --- audit log -----------------------------------------------------------
 
     /// Append an audit entry.
