@@ -7,8 +7,12 @@ import type { PluginProps } from "./registry";
  * schema into a working panel — no plugin-specific code — persisting records
  * through the capability-gated plugin record store.
  */
-export function DeclarativePlugin({ manifest, vault, chamberId, onClose }: PluginProps) {
+export function DeclarativePlugin({ manifest, vault, chamberId, settings, onClose }: PluginProps) {
   const ui = manifest.kind.type === "declarative" ? manifest.kind.ui : { panels: [] };
+  const settingsObj = (settings && typeof settings === "object" ? settings : {}) as Record<
+    string,
+    unknown
+  >;
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
@@ -38,6 +42,7 @@ export function DeclarativePlugin({ manifest, vault, chamberId, onClose }: Plugi
                 pluginId={manifest.id}
                 vaultId={vault.id}
                 chamberId={chamberId}
+                settings={settingsObj}
               />
             </section>
           ))}
@@ -52,18 +57,39 @@ function PanelBody({
   pluginId,
   vaultId,
   chamberId,
+  settings,
 }: {
   panel: PanelKind;
   pluginId: string;
   vaultId: string;
   chamberId: string;
+  settings: Record<string, unknown>;
 }) {
   if (panel.type === "note") {
     return <p className="whitespace-pre-wrap text-sm text-ink">{panel.content}</p>;
   }
   return (
-    <CollectionPanel panel={panel} pluginId={pluginId} vaultId={vaultId} chamberId={chamberId} />
+    <CollectionPanel
+      panel={panel}
+      pluginId={pluginId}
+      vaultId={vaultId}
+      chamberId={chamberId}
+      settings={settings}
+    />
   );
+}
+
+/** Seed a fresh form from `default_<fieldKey>` settings (per-vault defaults). */
+function defaultsFrom(
+  panel: Extract<PanelKind, { type: "collection" }>,
+  settings: Record<string, unknown>,
+): Record<string, unknown> {
+  const form: Record<string, unknown> = {};
+  for (const f of panel.fields) {
+    const v = settings[`default_${f.key}`];
+    if (v != null && v !== "") form[f.key] = v;
+  }
+  return form;
 }
 
 function CollectionPanel({
@@ -71,14 +97,16 @@ function CollectionPanel({
   pluginId,
   vaultId,
   chamberId,
+  settings,
 }: {
   panel: Extract<PanelKind, { type: "collection" }>;
   pluginId: string;
   vaultId: string;
   chamberId: string;
+  settings: Record<string, unknown>;
 }) {
   const [records, setRecords] = useState<PluginRecord[]>([]);
-  const [form, setForm] = useState<Record<string, unknown>>({});
+  const [form, setForm] = useState<Record<string, unknown>>(() => defaultsFrom(panel, settings));
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
@@ -99,7 +127,7 @@ function CollectionPanel({
     setBusy(true);
     try {
       await api.pluginRecordAdd(vaultId, chamberId, pluginId, panel.collection, form);
-      setForm({});
+      setForm(defaultsFrom(panel, settings));
       await refresh();
     } finally {
       setBusy(false);

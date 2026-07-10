@@ -6,7 +6,9 @@ use quill_ai::Message;
 use quill_core::authz::ChamberAiAuthorization;
 use quill_core::vault::VaultNode;
 use quill_core::VaultId;
-use quill_plugin::{Capability, Catalog, PluginManifest, TrustLevel, VaultComposition};
+use quill_plugin::{
+    Capability, Catalog, PluginManifest, TrustLevel, VaultComposition, VaultCustomization,
+};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -21,6 +23,10 @@ pub struct VaultCardDto {
     pub chambers: i64,
     pub hour_balance: i64,
     pub last_activity: String,
+    /// Vault crest/icon, sourced from the vault composition's customization.
+    pub icon: Option<String>,
+    /// Accent color (CSS RGB triple), sourced from customization.
+    pub accent: Option<String>,
 }
 
 /// Card metadata persisted alongside a vault node (settings key `card:{id}`).
@@ -99,6 +105,8 @@ pub async fn get_vault_hierarchy(state: State<'_, AppState>) -> Result<Vec<Vault
     let mut cards = Vec::new();
     for rec in children {
         let meta = card_meta(&state, rec.node.id).await;
+        // Customization is sourced from each vault's composition (the SSoT).
+        let custom = state.core.vault_composition(rec.node.id).await.unwrap_or_default().customization;
         cards.push(VaultCardDto {
             id: rec.node.id.to_string(),
             name: rec.node.name,
@@ -107,6 +115,8 @@ pub async fn get_vault_hierarchy(state: State<'_, AppState>) -> Result<Vec<Vault
             chambers: meta.chambers,
             hour_balance: meta.hour_balance,
             last_activity: rec.created_at.format("%Y-%m-%d").to_string(),
+            icon: custom.icon,
+            accent: custom.accent,
         });
     }
     Ok(cards)
@@ -118,6 +128,8 @@ pub async fn create_vault(
     state: State<'_, AppState>,
     name: String,
     stage: String,
+    customization: Option<VaultCustomization>,
+    template: Option<Vec<String>>,
 ) -> Result<VaultCardDto, String> {
     let master = state
         .core
@@ -140,6 +152,26 @@ pub async fn create_vault(
         )
         .await
         .map_err(|e| e.to_string())?;
+
+    // Seed the vault composition from the chosen customization + starter template.
+    let mut composition = VaultComposition {
+        customization: customization.unwrap_or_default(),
+        ..Default::default()
+    };
+    if let Some(ids) = template {
+        for id in ids {
+            if let Some(manifest) = resolve_manifest(&state, &id).await {
+                composition.enable(manifest.id, manifest.default_layout);
+            }
+        }
+    }
+    let custom = composition.customization.clone();
+    state
+        .core
+        .set_vault_composition(node.id, &composition)
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(VaultCardDto {
         id: node.id.to_string(),
         name,
@@ -148,6 +180,8 @@ pub async fn create_vault(
         chambers: 0,
         hour_balance: 0,
         last_activity: "just now".into(),
+        icon: custom.icon,
+        accent: custom.accent,
     })
 }
 

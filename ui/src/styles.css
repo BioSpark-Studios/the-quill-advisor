@@ -6,9 +6,13 @@
  * Theme tokens. The app defaults to "Forest Whisper" (:root). Selecting
  * "Cyan Holographic" stamps data-theme="cyan" on <html>. Every color in the
  * Tailwind config resolves to these RGB channel triples.
+ *
+ * The attribute selectors are intentionally *not* :root-scoped: a per-vault
+ * theme override sets data-theme on the vault container so its subtree
+ * re-resolves these tokens independently of the global app theme.
  */
 :root,
-:root[data-theme="forest"] {
+[data-theme="forest"] {
   --surface: 242 247 244; /* forest-50  #f2f7f4 */
   --surface-raised: 255 255 255;
   --ink: 26 46 38; /* deep forest ink */
@@ -19,7 +23,7 @@
   color-scheme: light;
 }
 
-:root[data-theme="cyan"] {
+[data-theme="cyan"] {
   --surface: 10 15 20; /* near-black */
   --surface-raised: 23 32 42; /* gray-800-ish */
   --ink: 233 242 247;

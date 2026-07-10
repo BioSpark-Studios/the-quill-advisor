@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { api, type AvailablePlugin, type VaultComposition } from "../../lib/ipc";
+import {
+  api,
+  type AvailablePlugin,
+  type FieldSpec,
+  type VaultComposition,
+} from "../../lib/ipc";
 
 const CAP_LABELS: Record<string, string> = {
   read_student_data: "Read student data",
@@ -40,8 +45,26 @@ export function AddonManager({
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState<string | null>(null);
 
   const enabledIds = new Set(composition.plugins.map((p) => p.plugin_id));
+
+  function settingsOf(pluginId: string): Record<string, unknown> {
+    const p = composition.plugins.find((x) => x.plugin_id === pluginId);
+    return (p?.settings && typeof p.settings === "object" ? p.settings : {}) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  function setSettings(pluginId: string, next: Record<string, unknown>) {
+    onChange({
+      ...composition,
+      plugins: composition.plugins.map((p) =>
+        p.plugin_id === pluginId ? { ...p, settings: next } : p,
+      ),
+    });
+  }
 
   function toggleEnabled(p: AvailablePlugin) {
     if (enabledIds.has(p.manifest.id)) {
@@ -92,10 +115,12 @@ export function AddonManager({
           {available.map((p) => {
             const enabled = enabledIds.has(p.manifest.id);
             const needsInstall = p.source === "forge" && !p.installed;
+            const configurable = enabled && p.manifest.config_schema.length > 0;
+            const showingSettings = settingsOpen === p.manifest.id;
             return (
+              <div key={p.manifest.id} className="rounded-xl border border-border bg-surface">
               <div
-                key={p.manifest.id}
-                className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4"
+                className="flex items-start gap-3 p-4"
               >
                 <div className="text-2xl">{p.manifest.icon}</div>
                 <div className="min-w-0 flex-1">
@@ -126,7 +151,20 @@ export function AddonManager({
                     </div>
                   )}
                 </div>
-                <div className="shrink-0">
+                <div className="flex shrink-0 items-center gap-2">
+                  {configurable && (
+                    <button
+                      onClick={() => setSettingsOpen(showingSettings ? null : p.manifest.id)}
+                      className={`rounded-lg border px-2 py-1 text-sm ${
+                        showingSettings
+                          ? "border-primary text-primary"
+                          : "border-border text-ink-muted hover:text-ink"
+                      }`}
+                      title="Plugin settings"
+                    >
+                      ⚙
+                    </button>
+                  )}
                   {needsInstall ? (
                     <button
                       onClick={() => install(p.manifest.id)}
@@ -154,10 +192,74 @@ export function AddonManager({
                   )}
                 </div>
               </div>
+
+              {configurable && showingSettings && (
+                <div className="border-t border-border p-4">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                    Settings — {vault.name}
+                  </h4>
+                  <SettingsForm
+                    schema={p.manifest.config_schema}
+                    values={settingsOf(p.manifest.id)}
+                    onChange={(next) => setSettings(p.manifest.id, next)}
+                  />
+                </div>
+              )}
+              </div>
             );
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Schema-driven per-vault settings editor for an enabled plugin. */
+function SettingsForm({
+  schema,
+  values,
+  onChange,
+}: {
+  schema: FieldSpec[];
+  values: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const cls =
+    "rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-sm text-ink outline-none focus:border-primary";
+  function set(key: string, v: unknown) {
+    onChange({ ...values, [key]: v });
+  }
+  return (
+    <div className="grid gap-3">
+      {schema.map((f) => (
+        <label key={f.key} className="grid gap-1">
+          <span className="text-xs text-ink-muted">{f.label}</span>
+          {f.kind.type === "select" ? (
+            <select className={cls} value={String(values[f.key] ?? "")} onChange={(e) => set(f.key, e.target.value)}>
+              <option value="">—</option>
+              {f.kind.options.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          ) : f.kind.type === "bool" ? (
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={Boolean(values[f.key])}
+              onChange={(e) => set(f.key, e.target.checked)}
+            />
+          ) : (
+            <input
+              type={f.kind.type === "date" ? "date" : "text"}
+              className={cls}
+              value={String(values[f.key] ?? "")}
+              onChange={(e) => set(f.key, e.target.value)}
+            />
+          )}
+        </label>
+      ))}
     </div>
   );
 }

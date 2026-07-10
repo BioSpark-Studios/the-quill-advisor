@@ -15,6 +15,10 @@ export interface VaultCard {
   chambers: number;
   hourBalance: number;
   lastActivity: string;
+  /** Emoji/crest shown on the card and vault header (from customization). */
+  icon?: string | null;
+  /** Accent as a CSS RGB triple, e.g. "217 119 6" (from customization). */
+  accent?: string | null;
 }
 
 export type VaultStage = "prospective" | "active" | "renewal" | "alumni";
@@ -24,6 +28,54 @@ export const STAGES: { id: VaultStage; label: string }[] = [
   { id: "active", label: "Active" },
   { id: "renewal", label: "Renewal" },
   { id: "alumni", label: "Alumni" },
+];
+
+/** Preset accent swatches offered in the vault dialog (CSS RGB triples). */
+export const ACCENT_SWATCHES: { id: string; label: string; rgb: string }[] = [
+  { id: "forest", label: "Forest", rgb: "70 128 103" },
+  { id: "amber", label: "Amber", rgb: "217 119 6" },
+  { id: "emerald", label: "Emerald", rgb: "52 211 153" },
+  { id: "cyan", label: "Cyan", rgb: "6 182 212" },
+  { id: "violet", label: "Violet", rgb: "139 92 246" },
+  { id: "rose", label: "Rose", rgb: "244 63 94" },
+  { id: "gold", label: "Gold", rgb: "202 138 4" },
+  { id: "sky", label: "Sky", rgb: "56 189 248" },
+];
+
+/** Emoji crests offered as quick-pick vault icons. */
+export const VAULT_ICONS = ["🎓", "✒️", "🏛️", "🔬", "🌱", "🚀", "⭐", "📚", "🧭", "🗝️"];
+
+/**
+ * Starter templates: a named preset of plugins to enable when a vault is
+ * created. "plugins" are manifest ids that also live in the Forge store; the
+ * backend enables them into the new vault's composition.
+ */
+export interface VaultTemplate {
+  id: string;
+  label: string;
+  description: string;
+  plugins: string[];
+}
+
+export const VAULT_TEMPLATES: VaultTemplate[] = [
+  { id: "blank", label: "Blank", description: "Empty vault — add plugins yourself.", plugins: [] },
+  {
+    id: "advising",
+    label: "College Advising",
+    description: "Essay Version Control + Application Timeline Weaver.",
+    plugins: ["biospark.essay-version-control", "biospark.timeline-weaver"],
+  },
+  {
+    id: "practice",
+    label: "Full Practice",
+    description: "Advising tools plus Recommendation Manager and Session Notes.",
+    plugins: [
+      "biospark.essay-version-control",
+      "biospark.timeline-weaver",
+      "biospark.recommendation-manager",
+      "biospark.session-notes",
+    ],
+  },
 ];
 
 export interface ChatReply {
@@ -155,8 +207,12 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 export const api = {
   healthCheck: () => invoke<boolean>("health_check"),
   listVaults: () => invoke<VaultCard[]>("get_vault_hierarchy"),
-  createVault: (name: string, stage: VaultStage) =>
-    invoke<VaultCard>("create_vault", { name, stage }),
+  createVault: (
+    name: string,
+    stage: VaultStage,
+    customization?: VaultCustomization,
+    template?: string[],
+  ) => invoke<VaultCard>("create_vault", { name, stage, customization, template }),
   moveVault: (id: string, stage: VaultStage) =>
     invoke<void>("move_vault", { id, stage }),
   chamberAiEnabled: (chamberId: string) =>
@@ -212,6 +268,8 @@ const mockVaults: VaultCard[] = [
     chambers: 14,
     hourBalance: 42,
     lastActivity: "2h ago",
+    icon: "🎓",
+    accent: "70 128 103",
   },
   {
     id: "v-okafor",
@@ -221,6 +279,8 @@ const mockVaults: VaultCard[] = [
     chambers: 9,
     hourBalance: 27,
     lastActivity: "yesterday",
+    icon: "🔬",
+    accent: "6 182 212",
   },
   {
     id: "v-lindqvist",
@@ -230,6 +290,8 @@ const mockVaults: VaultCard[] = [
     chambers: 3,
     hourBalance: 6,
     lastActivity: "3d ago",
+    icon: "🌱",
+    accent: "52 211 153",
   },
   {
     id: "v-summit",
@@ -239,13 +301,32 @@ const mockVaults: VaultCard[] = [
     chambers: 21,
     hourBalance: 88,
     lastActivity: "1w ago",
+    icon: "🏛️",
+    accent: "202 138 4",
   },
 ];
 
 const mockAi: Record<string, boolean> = {};
 const mockEssays: Record<string, EssayVersion[]> = {};
 const mockMilestones: Record<string, Milestone[]> = {};
-const mockComposition: Record<string, VaultComposition> = {};
+const mockComposition: Record<string, VaultComposition> = {
+  "v-rivera": {
+    customization: { icon: "🎓", accent: "70 128 103", theme: null },
+    plugins: [
+      { plugin_id: "biospark.essay-version-control", settings: null, layout: { w: 2, h: 1 }, order: 0 },
+      { plugin_id: "biospark.timeline-weaver", settings: null, layout: { w: 1, h: 1 }, order: 1 },
+    ],
+  },
+  "v-okafor": {
+    // A per-vault theme override: this vault renders in Cyan Holographic
+    // regardless of the global app theme.
+    customization: { icon: "🔬", accent: "6 182 212", theme: "cyan" },
+    plugins: [
+      { plugin_id: "biospark.timeline-weaver", settings: null, layout: { w: 2, h: 2 }, order: 0 },
+      { plugin_id: "biospark.essay-version-control", settings: null, layout: { w: 1, h: 1 }, order: 1 },
+    ],
+  },
+};
 const mockRecords: Record<string, PluginRecord[]> = {};
 const mockInstalled = new Set<string>();
 
@@ -257,6 +338,7 @@ function collectionManifest(
   pricing: Pricing,
   panelTitle: string,
   spec: Extract<PanelKind, { type: "collection" }>,
+  config_schema: FieldSpec[] = [],
 ): PluginManifest {
   return {
     id,
@@ -270,7 +352,7 @@ function collectionManifest(
     capabilities: ["store_plugin_records"],
     kind: { type: "declarative", ui: { panels: [{ title: panelTitle, kind: spec }] } },
     default_layout: { w: 1, h: 1 },
-    config_schema: [],
+    config_schema,
     pricing,
   };
 }
@@ -333,6 +415,14 @@ const MOCK_STORE: PluginManifest[] = [
         { key: "due", label: "Due date", kind: { type: "date" }, required: false },
       ],
     },
+    [
+      {
+        key: "default_status",
+        label: "Default status for new letters",
+        kind: { type: "select", options: ["Requested", "Received", "Submitted"] },
+        required: false,
+      },
+    ],
   ),
   collectionManifest(
     "biospark.session-notes",
@@ -396,16 +486,38 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     case "health_check":
       return true as T;
     case "get_vault_hierarchy":
-      return [...mockVaults] as T;
+      // Customization is sourced from each vault's composition (the SSoT).
+      return mockVaults.map((v) => {
+        const c = mockComposition[v.id]?.customization;
+        return { ...v, icon: c?.icon ?? v.icon, accent: c?.accent ?? v.accent };
+      }) as T;
     case "create_vault": {
+      const id = `v-${Math.random().toString(36).slice(2, 8)}`;
+      const customization = (args?.customization as VaultCustomization | undefined) ?? {};
+      const template = (args?.template as string[] | undefined) ?? [];
+      const allManifests = [...MOCK_BUILTINS, ...MOCK_STORE];
+      const composition: VaultComposition = {
+        customization,
+        plugins: template.flatMap((pid, i) => {
+          const m = allManifests.find((x) => x.id === pid);
+          return m ? [{ plugin_id: pid, settings: null, layout: m.default_layout, order: i }] : [];
+        }),
+      };
+      mockComposition[id] = composition;
+      // Enabling a store plugin via a template implies it is installed.
+      template.forEach((pid) => {
+        if (MOCK_STORE.some((m) => m.id === pid)) mockInstalled.add(pid);
+      });
       const card: VaultCard = {
-        id: `v-${Math.random().toString(36).slice(2, 8)}`,
+        id,
         name: String(args?.name ?? "New Vault"),
         stage: (args?.stage as VaultStage) ?? "prospective",
         students: 0,
         chambers: 0,
         hourBalance: 0,
         lastActivity: "just now",
+        icon: customization.icon ?? null,
+        accent: customization.accent ?? null,
       };
       mockVaults.push(card);
       return card as T;

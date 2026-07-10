@@ -8,6 +8,8 @@ export interface PluginProps {
   manifest: PluginManifest;
   vault: VaultCard;
   chamberId: string;
+  /** This plugin's per-vault settings (shape defined by its config schema). */
+  settings: unknown;
   onClose: () => void;
 }
 
