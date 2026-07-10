@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type EssayVersion, type VaultCard } from "../../lib/ipc";
+import { api, type EssayVersion } from "../../lib/ipc";
+import type { PluginProps } from "../../plugins/registry";
 
 const ESSAYS = [
   { id: "personal-statement", label: "Personal Statement" },
@@ -37,15 +38,7 @@ function lineDiff(a: string, b: string): DiffLine[] {
  * Commit drafts, browse the revision timeline, and diff a revision against the
  * one before it.
  */
-export function EssayVersionControl({
-  vault,
-  chamberId,
-  onClose,
-}: {
-  vault: VaultCard;
-  chamberId: string;
-  onClose: () => void;
-}) {
+export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) {
   const [essayId, setEssayId] = useState(ESSAYS[0].id);
   const [history, setHistory] = useState<EssayVersion[]>([]);
   const [draft, setDraft] = useState("");

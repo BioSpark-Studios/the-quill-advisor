@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, type Milestone, type VaultCard } from "../../lib/ipc";
+import { api, type Milestone } from "../../lib/ipc";
+import type { PluginProps } from "../../plugins/registry";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -14,15 +15,7 @@ function fmtDate(iso: string | null): string {
  * chronologically, backed by the vault's isolated database. Overdue items glow;
  * completed ones dim.
  */
-export function TimelineWeaver({
-  vault,
-  chamberId,
-  onClose,
-}: {
-  vault: VaultCard;
-  chamberId: string;
-  onClose: () => void;
-}) {
+export function TimelineWeaver({ vault, chamberId, onClose }: PluginProps) {
   const [items, setItems] = useState<Milestone[]>([]);
   const [title, setTitle] = useState("");
   const [dueAt, setDueAt] = useState("");

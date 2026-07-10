@@ -47,6 +47,91 @@ export interface Milestone {
   done: boolean;
 }
 
+// --- Plugin / Forge types (mirror the Rust manifest JSON) -------------------
+
+export type FieldKind =
+  | { type: "text" }
+  | { type: "long_text" }
+  | { type: "date" }
+  | { type: "bool" }
+  | { type: "select"; options: string[] };
+
+export interface FieldSpec {
+  key: string;
+  label: string;
+  kind: FieldKind;
+  required: boolean;
+}
+
+export type PanelKind =
+  | {
+      type: "collection";
+      collection: string;
+      add_label: string;
+      title_field: string;
+      subtitle_field?: string | null;
+      fields: FieldSpec[];
+    }
+  | { type: "note"; content: string };
+
+export interface UiSchema {
+  panels: { title: string; kind: PanelKind }[];
+}
+
+export type PluginKind =
+  | { type: "native"; component: string }
+  | { type: "declarative"; ui: UiSchema };
+
+export type Pricing = { type: "free" } | { type: "paid"; tier: string; price_cents: number };
+
+export interface PluginManifest {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  author: string;
+  icon: string;
+  category: string;
+  scope: "vault" | "chamber";
+  capabilities: string[];
+  kind: PluginKind;
+  default_layout: { w: number; h: number };
+  config_schema: FieldSpec[];
+  pricing: Pricing;
+}
+
+export type TrustLevel = "verified" | "unsigned" | "untrusted";
+
+export interface AvailablePlugin {
+  manifest: PluginManifest;
+  trust: TrustLevel;
+  source: "builtin" | "forge";
+  installed: boolean;
+}
+
+export interface EnabledPlugin {
+  plugin_id: string;
+  settings: unknown;
+  layout: { w: number; h: number };
+  order: number;
+}
+
+export interface VaultCustomization {
+  theme?: string | null;
+  accent?: string | null;
+  icon?: string | null;
+}
+
+export interface VaultComposition {
+  customization: VaultCustomization;
+  plugins: EnabledPlugin[];
+}
+
+export interface PluginRecord {
+  id: string;
+  data: Record<string, unknown>;
+}
+
 // --- Tauri detection --------------------------------------------------------
 
 interface TauriGlobal {
@@ -90,6 +175,30 @@ export const api = {
     invoke<Milestone[]>("list_milestones", { vaultId, chamberId }),
   setMilestoneDone: (vaultId: string, id: string, done: boolean) =>
     invoke<void>("set_milestone_done", { vaultId, id, done }),
+
+  // Forge / plugin system
+  listAvailablePlugins: () => invoke<AvailablePlugin[]>("list_available_plugins"),
+  installPlugin: (id: string) => invoke<void>("install_plugin", { id }),
+  uninstallPlugin: (id: string) => invoke<void>("uninstall_plugin", { id }),
+  getVaultComposition: (vaultId: string) =>
+    invoke<VaultComposition>("get_vault_composition", { vaultId }),
+  setVaultComposition: (vaultId: string, composition: VaultComposition) =>
+    invoke<void>("set_vault_composition", { vaultId, composition }),
+  pluginRecordAdd: (
+    vaultId: string,
+    chamberId: string | null,
+    pluginId: string,
+    collection: string,
+    data: Record<string, unknown>,
+  ) => invoke<PluginRecord>("plugin_record_add", { vaultId, chamberId, pluginId, collection, data }),
+  pluginRecordList: (
+    vaultId: string,
+    chamberId: string | null,
+    pluginId: string,
+    collection: string,
+  ) => invoke<PluginRecord[]>("plugin_record_list", { vaultId, chamberId, pluginId, collection }),
+  pluginRecordDelete: (vaultId: string, id: string) =>
+    invoke<void>("plugin_record_delete", { vaultId, id }),
 };
 
 // --- In-browser mock backend ------------------------------------------------
@@ -136,6 +245,141 @@ const mockVaults: VaultCard[] = [
 const mockAi: Record<string, boolean> = {};
 const mockEssays: Record<string, EssayVersion[]> = {};
 const mockMilestones: Record<string, Milestone[]> = {};
+const mockComposition: Record<string, VaultComposition> = {};
+const mockRecords: Record<string, PluginRecord[]> = {};
+const mockInstalled = new Set<string>();
+
+function collectionManifest(
+  id: string,
+  name: string,
+  description: string,
+  icon: string,
+  pricing: Pricing,
+  panelTitle: string,
+  spec: Extract<PanelKind, { type: "collection" }>,
+): PluginManifest {
+  return {
+    id,
+    name,
+    description,
+    version: "1.0.0",
+    author: "BioSpark Studios",
+    icon,
+    category: "advising",
+    scope: "chamber",
+    capabilities: ["store_plugin_records"],
+    kind: { type: "declarative", ui: { panels: [{ title: panelTitle, kind: spec }] } },
+    default_layout: { w: 1, h: 1 },
+    config_schema: [],
+    pricing,
+  };
+}
+
+const MOCK_BUILTINS: PluginManifest[] = [
+  {
+    id: "biospark.essay-version-control",
+    name: "Essay Version Control",
+    description: "Git-style drafts, revision history, and diffs.",
+    version: "1.0.0",
+    author: "BioSpark Studios",
+    icon: "📝",
+    category: "advising",
+    scope: "chamber",
+    capabilities: ["read_essays", "write_essays"],
+    kind: { type: "native", component: "EssayVersionControl" },
+    default_layout: { w: 1, h: 1 },
+    config_schema: [],
+    pricing: { type: "free" },
+  },
+  {
+    id: "biospark.timeline-weaver",
+    name: "Application Timeline Weaver",
+    description: "Deadlines and milestones on a chronological timeline.",
+    version: "1.0.0",
+    author: "BioSpark Studios",
+    icon: "🗓️",
+    category: "advising",
+    scope: "chamber",
+    capabilities: ["read_milestones", "write_milestones"],
+    kind: { type: "native", component: "TimelineWeaver" },
+    default_layout: { w: 1, h: 1 },
+    config_schema: [],
+    pricing: { type: "free" },
+  },
+];
+
+const MOCK_STORE: PluginManifest[] = [
+  collectionManifest(
+    "biospark.recommendation-manager",
+    "Recommendation Manager",
+    "Track recommendation letters and their status.",
+    "✉️",
+    { type: "free" },
+    "Letters",
+    {
+      type: "collection",
+      collection: "letters",
+      add_label: "Add letter",
+      title_field: "recommender",
+      subtitle_field: "status",
+      fields: [
+        { key: "recommender", label: "Recommender", kind: { type: "text" }, required: true },
+        {
+          key: "status",
+          label: "Status",
+          kind: { type: "select", options: ["Requested", "Received", "Submitted"] },
+          required: false,
+        },
+        { key: "due", label: "Due date", kind: { type: "date" }, required: false },
+      ],
+    },
+  ),
+  collectionManifest(
+    "biospark.session-notes",
+    "Session Notes",
+    "Log advising-session notes per student.",
+    "🗒️",
+    { type: "free" },
+    "Notes",
+    {
+      type: "collection",
+      collection: "notes",
+      add_label: "Add note",
+      title_field: "note",
+      subtitle_field: "date",
+      fields: [
+        { key: "date", label: "Date", kind: { type: "date" }, required: false },
+        { key: "note", label: "Note", kind: { type: "long_text" }, required: true },
+      ],
+    },
+  ),
+  collectionManifest(
+    "biospark.scholarship-tracker",
+    "Scholarship Tracker",
+    "Track scholarship applications, amounts, and deadlines.",
+    "🎓",
+    { type: "paid", tier: "pro", price_cents: 500 },
+    "Scholarships",
+    {
+      type: "collection",
+      collection: "scholarships",
+      add_label: "Add scholarship",
+      title_field: "name",
+      subtitle_field: "status",
+      fields: [
+        { key: "name", label: "Name", kind: { type: "text" }, required: true },
+        { key: "amount", label: "Amount", kind: { type: "text" }, required: false },
+        { key: "deadline", label: "Deadline", kind: { type: "date" }, required: false },
+        {
+          key: "status",
+          label: "Status",
+          kind: { type: "select", options: ["Researching", "Applied", "Awarded"] },
+          required: false,
+        },
+      ],
+    },
+  ),
+];
 
 function sortMilestones(list: Milestone[]): Milestone[] {
   return [...list].sort((a, b) => {
@@ -213,6 +457,56 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       for (const list of Object.values(mockMilestones)) {
         const m = list.find((x) => x.id === args?.id);
         if (m) m.done = Boolean(args?.done);
+      }
+      return undefined as T;
+    }
+    case "list_available_plugins": {
+      const builtins: AvailablePlugin[] = MOCK_BUILTINS.map((manifest) => ({
+        manifest,
+        trust: "verified",
+        source: "builtin",
+        installed: true,
+      }));
+      const store: AvailablePlugin[] = MOCK_STORE.map((manifest) => ({
+        manifest,
+        trust: "verified",
+        source: "forge",
+        installed: mockInstalled.has(manifest.id),
+      }));
+      return [...builtins, ...store] as T;
+    }
+    case "install_plugin":
+      mockInstalled.add(String(args?.id));
+      return undefined as T;
+    case "uninstall_plugin":
+      mockInstalled.delete(String(args?.id));
+      return undefined as T;
+    case "get_vault_composition":
+      return (mockComposition[String(args?.vaultId)] ?? {
+        customization: {},
+        plugins: [],
+      }) as T;
+    case "set_vault_composition":
+      mockComposition[String(args?.vaultId)] = args?.composition as VaultComposition;
+      return undefined as T;
+    case "plugin_record_add": {
+      const key = `${args?.vaultId}:${args?.pluginId}:${args?.collection}:${args?.chamberId ?? ""}`;
+      const list = mockRecords[key] ?? (mockRecords[key] = []);
+      const rec: PluginRecord = {
+        id: `pr-${Math.random().toString(36).slice(2, 8)}`,
+        data: (args?.data as Record<string, unknown>) ?? {},
+      };
+      list.push(rec);
+      return rec as T;
+    }
+    case "plugin_record_list": {
+      const key = `${args?.vaultId}:${args?.pluginId}:${args?.collection}:${args?.chamberId ?? ""}`;
+      return [...(mockRecords[key] ?? [])] as T;
+    }
+    case "plugin_record_delete": {
+      for (const list of Object.values(mockRecords)) {
+        const i = list.findIndex((r) => r.id === args?.id);
+        if (i >= 0) list.splice(i, 1);
       }
       return undefined as T;
     }

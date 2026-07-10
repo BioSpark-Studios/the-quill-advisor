@@ -1,34 +1,29 @@
 import { useEffect, useState } from "react";
-import { api, type VaultCard } from "../../lib/ipc";
+import {
+  api,
+  type AvailablePlugin,
+  type PluginManifest,
+  type VaultCard,
+  type VaultComposition,
+} from "../../lib/ipc";
 import { Orb } from "../orb/Orb";
 import { QuillChat } from "../orb/QuillChat";
-import { EssayVersionControl } from "../tools/EssayVersionControl";
-import { TimelineWeaver } from "../tools/TimelineWeaver";
+import { AddonManager } from "./AddonManager";
+import { DeclarativePlugin } from "../../plugins/DeclarativePlugin";
+import { nativeComponent } from "../../plugins/registry";
 import { ThemeSwitcher } from "../../components/ThemeSwitcher";
 
-type ToolId = "essay-version-control" | "timeline-weaver";
+const SPAN: Record<string, string> = {
+  "1x1": "",
+  "2x1": "md:col-span-2",
+  "3x1": "md:col-span-3",
+  "1x2": "md:row-span-2",
+  "2x2": "md:col-span-2 md:row-span-2",
+  "3x2": "md:col-span-3 md:row-span-2",
+};
 
-const BENTO: { title: string; hint: string; span: string; tool?: ToolId }[] = [
-  { title: "Pathway Blueprint", hint: "Academic & activity journey", span: "md:col-span-2 md:row-span-2" },
-  {
-    title: "Application Timeline Weaver",
-    hint: "Deadlines & milestones",
-    span: "",
-    tool: "timeline-weaver",
-  },
-  {
-    title: "Essay Version Control",
-    hint: "Draft history & diffs",
-    span: "",
-    tool: "essay-version-control",
-  },
-  { title: "College Landscape Atlas", hint: "RAG-based explorer", span: "md:col-span-2" },
-  { title: "Recommendation Manager", hint: "Letter tracking", span: "" },
-  { title: "Billing & Hours", hint: "Local ledger", span: "" },
-];
-
-/** Inside a vault: the Magic Bento dashboard, a chamber list with the per-chamber
- *  AI gate, and the Orb access point. */
+/** Inside a vault: a dashboard composed entirely from the vault's enabled
+ *  plugins, the per-chamber AI gate, the Forge Addon Manager, and the Orb. */
 export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => void }) {
   const chambers = Array.from({ length: Math.max(vault.chambers, 3) }, (_, i) => ({
     id: `${vault.id}-chamber-${i + 1}`,
@@ -37,7 +32,34 @@ export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => v
   const [activeChamber, setActiveChamber] = useState(chambers[0].id);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [openTool, setOpenTool] = useState<ToolId | null>(null);
+  const [available, setAvailable] = useState<AvailablePlugin[]>([]);
+  const [composition, setComposition] = useState<VaultComposition | null>(null);
+  const [openPluginId, setOpenPluginId] = useState<string | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
+
+  // Load the plugin catalog and this vault's composition; seed a default the
+  // first time so the dashboard isn't empty.
+  useEffect(() => {
+    (async () => {
+      const avail = await api.listAvailablePlugins();
+      setAvailable(avail);
+      let comp = await api.getVaultComposition(vault.id);
+      if (comp.plugins.length === 0) {
+        const builtins = avail.filter((a) => a.source === "builtin");
+        comp = {
+          customization: comp.customization ?? {},
+          plugins: builtins.map((a, i) => ({
+            plugin_id: a.manifest.id,
+            settings: null,
+            layout: a.manifest.default_layout,
+            order: i,
+          })),
+        };
+        await api.setVaultComposition(vault.id, comp);
+      }
+      setComposition(comp);
+    })();
+  }, [vault.id]);
 
   useEffect(() => {
     api.chamberAiEnabled(activeChamber).then(setAiEnabled);
@@ -48,6 +70,23 @@ export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => v
     setAiEnabled(next);
     await api.setChamberAi(activeChamber, next);
   }
+
+  async function updateComposition(next: VaultComposition) {
+    setComposition(next);
+    await api.setVaultComposition(vault.id, next);
+  }
+
+  function manifestFor(id: string): PluginManifest | undefined {
+    return available.find((a) => a.manifest.id === id)?.manifest;
+  }
+
+  const tiles = (composition?.plugins ?? [])
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((p) => ({ enabled: p, manifest: manifestFor(p.plugin_id) }))
+    .filter((t): t is { enabled: (typeof t)["enabled"]; manifest: PluginManifest } => !!t.manifest);
+
+  const openManifest = openPluginId ? manifestFor(openPluginId) : undefined;
 
   return (
     <div className="min-h-screen">
@@ -66,7 +105,15 @@ export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => v
             </p>
           </div>
         </div>
-        <ThemeSwitcher />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setManagerOpen(true)}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm text-ink hover:border-primary hover:text-primary"
+          >
+            ⚙ Plugins
+          </button>
+          <ThemeSwitcher />
+        </div>
       </header>
 
       <main className="grid gap-6 p-6 lg:grid-cols-[240px_1fr]">
@@ -115,42 +162,72 @@ export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => v
           </div>
         </aside>
 
-        {/* Magic Bento dashboard */}
+        {/* Magic Bento dashboard, composed from enabled plugins */}
         <section className="grid auto-rows-[130px] grid-cols-1 gap-4 md:grid-cols-3">
-          {BENTO.map((tile) => (
+          {tiles.map(({ enabled, manifest }) => (
             <button
-              key={tile.title}
+              key={manifest.id}
               type="button"
-              onClick={() => tile.tool && setOpenTool(tile.tool)}
-              disabled={!tile.tool}
+              onClick={() => setOpenPluginId(manifest.id)}
               className={`electric-border flex flex-col justify-between rounded-2xl border border-border bg-surface-raised/70 p-4 text-left transition-shadow hover:shadow-glow ${
-                tile.tool ? "cursor-pointer" : "cursor-default opacity-80"
-              } ${tile.span}`}
+                SPAN[`${enabled.layout.w}x${enabled.layout.h}`] ?? ""
+              }`}
             >
-              <h3 className="font-serif text-base text-ink">{tile.title}</h3>
-              <p className="text-xs text-ink-muted">
-                {tile.hint}
-                {tile.tool ? " · open" : ""}
-              </p>
+              <div className="text-2xl">{manifest.icon}</div>
+              <div>
+                <h3 className="font-serif text-base text-ink">{manifest.name}</h3>
+                <p className="text-xs text-ink-muted">{manifest.description}</p>
+              </div>
             </button>
           ))}
+
+          <button
+            type="button"
+            onClick={() => setManagerOpen(true)}
+            className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border p-4 text-sm text-ink-muted transition-colors hover:border-primary hover:text-primary"
+          >
+            ＋ Add plugins
+          </button>
         </section>
       </main>
 
-      {openTool === "essay-version-control" && (
-        <EssayVersionControl vault={vault} chamberId={activeChamber} onClose={() => setOpenTool(null)} />
-      )}
-      {openTool === "timeline-weaver" && (
-        <TimelineWeaver vault={vault} chamberId={activeChamber} onClose={() => setOpenTool(null)} />
+      {/* Launch the opened plugin (native component or declarative renderer) */}
+      {openManifest &&
+        (openManifest.kind.type === "native"
+          ? (() => {
+              const Comp = nativeComponent(openManifest.kind.component);
+              return Comp ? (
+                <Comp
+                  manifest={openManifest}
+                  vault={vault}
+                  chamberId={activeChamber}
+                  onClose={() => setOpenPluginId(null)}
+                />
+              ) : null;
+            })()
+          : (
+              <DeclarativePlugin
+                manifest={openManifest}
+                vault={vault}
+                chamberId={activeChamber}
+                onClose={() => setOpenPluginId(null)}
+              />
+            ))}
+
+      {managerOpen && composition && (
+        <AddonManager
+          vault={vault}
+          available={available}
+          composition={composition}
+          onChange={updateComposition}
+          onCatalogChange={async () => setAvailable(await api.listAvailablePlugins())}
+          onClose={() => setManagerOpen(false)}
+        />
       )}
 
       <Orb onClick={() => setChatOpen((v) => !v)} active={chatOpen} />
       {chatOpen && (
-        <QuillChat
-          chamberId={activeChamber}
-          aiEnabled={aiEnabled}
-          onClose={() => setChatOpen(false)}
-        />
+        <QuillChat chamberId={activeChamber} aiEnabled={aiEnabled} onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
