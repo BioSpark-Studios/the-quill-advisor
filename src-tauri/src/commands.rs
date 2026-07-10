@@ -6,6 +6,7 @@ use quill_ai::Message;
 use quill_core::authz::ChamberAiAuthorization;
 use quill_core::vault::VaultNode;
 use quill_core::VaultId;
+use quill_plugin::{Capability, Catalog, PluginManifest, TrustLevel, VaultComposition};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -226,6 +227,184 @@ pub async fn essay_history(
     let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
     let history = db.essay_history(&essay_id).await.map_err(|e| e.to_string())?;
     Ok(history.into_iter().map(EssayVersionDto::from).collect())
+}
+
+// --- BioSpark Forge ---------------------------------------------------------
+
+/// A plugin offered in the store / manager, with its trust + install state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailablePlugin {
+    pub manifest: PluginManifest,
+    pub trust: TrustLevel,
+    /// `"builtin"` (native, always available) or `"forge"` (installable store).
+    pub source: String,
+    pub installed: bool,
+}
+
+const CATALOG_KEY: &str = "forge:catalog";
+
+async fn load_catalog(state: &AppState) -> Catalog {
+    match state.core.get_setting(CATALOG_KEY).await {
+        Ok(Some(json)) => Catalog::from_json(&json).unwrap_or_default(),
+        _ => Catalog::new(),
+    }
+}
+
+async fn save_catalog(state: &AppState, cat: &Catalog) -> Result<(), String> {
+    let json = cat.to_json().map_err(|e| e.to_string())?;
+    state.core.upsert_setting(CATALOG_KEY, &json).await.map_err(|e| e.to_string())
+}
+
+/// Resolve a plugin manifest across built-ins and the (installed or store) set.
+async fn resolve_manifest(state: &AppState, id: &str) -> Option<PluginManifest> {
+    if let Some(m) = state.forge.manifest(id) {
+        return Some(m);
+    }
+    load_catalog(state).await.get(id).map(|s| s.manifest.clone())
+}
+
+/// List every plugin available to enable in a vault: native built-ins plus the
+/// Forge store (with trust badges and install state).
+#[tauri::command]
+pub async fn list_available_plugins(
+    state: State<'_, AppState>,
+) -> Result<Vec<AvailablePlugin>, String> {
+    let catalog = load_catalog(&state).await;
+    let mut out: Vec<AvailablePlugin> = state
+        .forge
+        .builtins()
+        .iter()
+        .map(|m| AvailablePlugin {
+            manifest: m.clone(),
+            trust: TrustLevel::Verified,
+            source: "builtin".into(),
+            installed: true,
+        })
+        .collect();
+    for signed in state.forge.store() {
+        out.push(AvailablePlugin {
+            manifest: signed.manifest.clone(),
+            trust: signed.trust_level(state.forge.trust()),
+            source: "forge".into(),
+            installed: catalog.contains(&signed.manifest.id),
+        });
+    }
+    Ok(out)
+}
+
+/// Install a store plugin (verifies it exists and records it in the catalog).
+#[tauri::command]
+pub async fn install_plugin(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let signed = state.forge.store_plugin(&id).ok_or("plugin not found in store")?.clone();
+    let mut catalog = load_catalog(&state).await;
+    catalog.install(signed).map_err(|e| e.to_string())?;
+    save_catalog(&state, &catalog).await
+}
+
+/// Uninstall a Forge plugin.
+#[tauri::command]
+pub async fn uninstall_plugin(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut catalog = load_catalog(&state).await;
+    catalog.uninstall(&id).map_err(|e| e.to_string())?;
+    save_catalog(&state, &catalog).await
+}
+
+/// Read a vault's plugin composition (enabled plugins + customization).
+#[tauri::command]
+pub async fn get_vault_composition(
+    state: State<'_, AppState>,
+    vault_id: String,
+) -> Result<VaultComposition, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    state.core.vault_composition(vid).await.map_err(|e| e.to_string())
+}
+
+/// Persist a vault's plugin composition.
+#[tauri::command]
+pub async fn set_vault_composition(
+    state: State<'_, AppState>,
+    vault_id: String,
+    composition: VaultComposition,
+) -> Result<(), String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    state.core.set_vault_composition(vid, &composition).await.map_err(|e| e.to_string())
+}
+
+/// A generic plugin record returned to the declarative renderer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginRecordDto {
+    pub id: String,
+    /// Parsed JSON payload (the record's fields).
+    pub data: serde_json::Value,
+}
+
+async fn ensure_can_store(state: &AppState, plugin_id: &str) -> Result<(), String> {
+    let manifest =
+        resolve_manifest(state, plugin_id).await.ok_or("unknown plugin")?;
+    if manifest.has_capability(Capability::StorePluginRecords) {
+        Ok(())
+    } else {
+        Err(format!("plugin {plugin_id} lacks the store-records capability"))
+    }
+}
+
+/// Add a record to a declarative plugin's collection (capability-gated).
+#[tauri::command]
+pub async fn plugin_record_add(
+    state: State<'_, AppState>,
+    vault_id: String,
+    chamber_id: Option<String>,
+    plugin_id: String,
+    collection: String,
+    data: serde_json::Value,
+) -> Result<PluginRecordDto, String> {
+    ensure_can_store(&state, &plugin_id).await?;
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let payload = serde_json::to_string(&data).map_err(|e| e.to_string())?;
+    let rec = db
+        .plugin_record_add(&plugin_id, &collection, chamber_id.as_deref(), &payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(PluginRecordDto { id: rec.id, data })
+}
+
+/// List a declarative plugin collection's records (capability-gated).
+#[tauri::command]
+pub async fn plugin_record_list(
+    state: State<'_, AppState>,
+    vault_id: String,
+    chamber_id: Option<String>,
+    plugin_id: String,
+    collection: String,
+) -> Result<Vec<PluginRecordDto>, String> {
+    ensure_can_store(&state, &plugin_id).await?;
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let rows = db
+        .plugin_record_list(&plugin_id, &collection, chamber_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|r| PluginRecordDto {
+            id: r.id,
+            data: serde_json::from_str(&r.data).unwrap_or(serde_json::Value::Null),
+        })
+        .collect())
+}
+
+/// Delete a declarative plugin record.
+#[tauri::command]
+pub async fn plugin_record_delete(
+    state: State<'_, AppState>,
+    vault_id: String,
+    id: String,
+) -> Result<(), String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    db.plugin_record_delete(&id).await.map_err(|e| e.to_string())
 }
 
 /// Add a milestone to a chamber's application timeline.

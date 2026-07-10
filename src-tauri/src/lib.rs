@@ -1,6 +1,7 @@
 //! The Quill Advisor desktop shell (Tauri v2).
 
 mod commands;
+mod forge;
 mod state;
 
 use state::AppState;
@@ -41,6 +42,14 @@ pub fn run() {
             commands::add_milestone,
             commands::list_milestones,
             commands::set_milestone_done,
+            commands::list_available_plugins,
+            commands::install_plugin,
+            commands::uninstall_plugin,
+            commands::get_vault_composition,
+            commands::set_vault_composition,
+            commands::plugin_record_add,
+            commands::plugin_record_list,
+            commands::plugin_record_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running The Quill Advisor");

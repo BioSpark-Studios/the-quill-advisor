@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use quill_ai::providers::{AnthropicProvider, GeminiProvider, OllamaProvider, OpenAiProvider};
+use crate::forge::Forge;
 use quill_ai::{LlmProvider, QuantumQuillAgent, QuillConfig, Router};
 use quill_core::VaultId;
 use quill_storage::{CoreDb, VaultManager};
@@ -19,6 +20,8 @@ pub struct AppState {
     pub master_id: VaultId,
     /// The Quantum Quill agent bound to the Omni-Route router.
     pub agent: Arc<QuantumQuillAgent>,
+    /// The BioSpark Forge: built-in + signed store plugins and trust.
+    pub forge: Forge,
 }
 
 impl AppState {
@@ -36,7 +39,7 @@ impl AppState {
         let router = Arc::new(build_router());
         let agent = Arc::new(QuantumQuillAgent::new(QuillConfig::quantum_quill(), router));
 
-        Ok(Self { core, vaults, master_id: master.node.id, agent })
+        Ok(Self { core, vaults, master_id: master.node.id, agent, forge: Forge::new() })
     }
 }
 
