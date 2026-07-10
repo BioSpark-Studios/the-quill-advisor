@@ -1,21 +1,94 @@
-MIT License
+Here is a rewritten draft tailored for The Quill Advisor, structured around your tiered model while adapting it for students, parents, solo counselors, and directors.
 
-Copyright (c) 2025 BioSpark Studios
+The Quill Advisor License (QAL-Tiered), Version 0.1 — DRAFT
+SPDX-License-Identifier: LicenseRef-QuillAdvisor-1.0   
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Copyright (c) 2026 Jeremy Dickinson ("Phantori"), BioSpark Studios.   
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+All rights reserved except as expressly granted below.   
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+NOTE: This is a starting-point draft, NOT legal advice. Have a qualified attorney review it before relying on it commercially. Bracketed values [LIKE THIS] are placeholders for BioSpark Studios to set.   
+
+0. SUMMARY (non-binding; the terms below govern)
+The Quill Advisor (the "Software") is source-available, not open source. Students, parents, and college admissions professionals may read, run, and use the Software under the specific tier that matches their role (Section 3). You may not redistribute the underlying software, offer it as a service to third parties outside of the platform's intended features, or use it to build a competing product, except under a tier or written agreement that permits it. BioSpark Studios may release future versions under an open-source or different commercial license at its sole discretion.
+
+1. DEFINITIONS
+"Software" — The contents of this repository, the application binaries, and any part of its source code or ecosystem.
+
+"You" — The individual or legal entity exercising rights under this License.
+
+"Use" — To run, interact with, and utilize the Software to manage, advise on, or execute the college application and advising process.
+
+"Commercial Use" — Use in connection with revenue-generating activity, including independent college counseling, private consulting, or school/district-wide institutional deployment.
+
+"Redistribute" — To distribute, sublicense, resell, host-as-a-service, or otherwise make the Software code or core infrastructure available to third parties.   
+
+2. GRANT
+Subject to your compliance with this License and your applicable Tier (Section 3), BioSpark Studios grants You a worldwide, non-exclusive, non-transferable, revocable license to Use the Software. You own your data, essays, portfolios, and outputs generated through the system.   
+
+3. TIERS (eligibility and scale)
+3.1 STUDENT — Free
+For individual students utilizing the platform for personal, non-commercial college planning, portfolio building, and applications.
+
+Scope: Free access to baseline application features.
+
+Restrictions: No Commercial Use; no Redistribution.
+
+3.2 FAMILY — Free (Platform Access)
+For parents, guardians, or family members assisting a student.
+
+Scope: Free access to view and collaborate on connected student profiles.
+
+Note: Platform usage is free, but families may incur external financial obligations if they choose to hire independent professionals utilizing the platform (e.g., Solo Counselors or Directors).
+
+Restrictions: No Commercial Use; no Redistribution.
+
+3.3 SOLO COUNSELOR — Contact BioSpark Studios for Licensing Fees
+For independent college consultants, private counselors, or solo advisors utilizing the Software to manage their private practice and clients.
+
+Scope: Commercial Use permitted to manage up to [X] active client portfolios per year.
+
+Structure: Subject to a monthly or annual licensing fee [to be set by BioSpark Studios]. For current trial and early-access rates, contact BioSpark Studios.
+
+Restrictions: Single-user deployment only; no Redistribution.
+
+3.4 DIRECTOR — Contact BioSpark Studios
+For head counselors, school districts, consulting networks, multi-advisor firms, enterprise deployments, or white-labeling requests.
+
+Scope: Multi-user licensing, priority coordination tools, administrative oversight dashboards, and [priority support / expanded deployment rights as agreed].
+
+Structure: Granted only under a separate written agreement.
+
+If more than one Tier could apply, the higher Tier governs. BioSpark Studios may set, waive, or change Tier fees, seat limits, and thresholds.   
+
+4. RESTRICTIONS (all Tiers)
+You may not:   
+
+(a) Redistribute the Software except as a Tier or written agreement permits;   
+
+(b) Remove or alter copyright, license, or attribution notices;   
+
+(c) Use the Software or its architectural concepts to build or offer a product that substantially competes with The Quill Advisor or the BioSpark Quantum ecosystem;   
+
+(d) Use BioSpark Studios', The Quill Advisor's, or Quorum's names, logos, seals, or crests except to give factual attribution (Section 6).
+
+5. CONTRIBUTIONS
+If You submit changes, feature suggestions, or modifications to BioSpark Studios (e.g., a pull request or feedback log), You grant BioSpark Studios a perpetual, worldwide, royalty-free license to use, modify, relicense, and distribute those contributions as part of the Software, including under any future license BioSpark Studios adopts.   
+
+6. TRADEMARKS & HERALDRY
+The names "BioSpark Studios", "The Quill Advisor", "Quorum", "Phantori", and any associated seals/crests/logos are trademarks and creative works of BioSpark Studios and are NOT licensed by this License. Factual, non-endorsing reference is permitted.   
+
+7. FUTURE RELICENSING
+BioSpark Studios reserves the right to release any version of the Software under a different license at any time.   
+
+8. TERMINATION
+This License terminates automatically if You breach it. Sections 4–6 and 9–10 survive termination.   
+
+9. DISCLAIMER OF WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.   
+
+10. LIMITATION OF LIABILITY
+IN NO EVENT SHALL BIOSPARK STUDIOS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT, OR OTHERWISE, ARISING FROM OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.   
+
+  
+Contact for Counselor/Director licensing tiers, fees, or questions: jerdickinson@gmail.com
