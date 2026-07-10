@@ -9,6 +9,7 @@ description = "Persistence for The Quill Advisor: global core_db and isolated pe
 
 [dependencies]
 quill-core.workspace = true
+quill-plugin.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

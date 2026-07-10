@@ -23,7 +23,7 @@ pub mod vault_manager;
 pub use core_db::CoreDb;
 pub use error::{Result, StorageError};
 pub use models::VaultRecord;
-pub use vault_db::{EssayVersion, Milestone, QaVault, Student, VaultDb};
+pub use vault_db::{EssayVersion, Milestone, PluginRecord, QaVault, Student, VaultDb};
 pub use vault_manager::VaultManager;
 
 #[cfg(test)]
@@ -151,6 +151,72 @@ mod tests {
         let history = vault.essay_history("essay-1").await.unwrap();
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].body, "Hello world.");
+    }
+
+    #[tokio::test]
+    async fn vault_composition_persists() {
+        let db = CoreDb::open_in_memory().await.unwrap();
+        let vid = quill_core::VaultId::new();
+
+        // Defaults to empty when unset.
+        assert!(db.vault_composition(vid).await.unwrap().plugins.is_empty());
+
+        let mut comp = quill_plugin::VaultComposition::default();
+        comp.customization.theme = Some("cyan".into());
+        comp.customization.accent = Some("6 182 212".into());
+        comp.enable(
+            "biospark.essay-version-control",
+            quill_plugin::TileLayout { w: 1, h: 1 },
+        );
+        db.set_vault_composition(vid, &comp).await.unwrap();
+
+        let loaded = db.vault_composition(vid).await.unwrap();
+        assert_eq!(loaded.customization.theme.as_deref(), Some("cyan"));
+        assert!(loaded.has("biospark.essay-version-control"));
+    }
+
+    #[tokio::test]
+    async fn plugin_records_are_namespaced_and_chamber_scoped() {
+        let vault = VaultDb::open_in_memory().await.unwrap();
+        vault
+            .plugin_record_add("acme.notes", "notes", Some("chamber-1"), r#"{"text":"a"}"#)
+            .await
+            .unwrap();
+        vault
+            .plugin_record_add("acme.notes", "notes", Some("chamber-2"), r#"{"text":"b"}"#)
+            .await
+            .unwrap();
+        // Different plugin, same collection name — must not collide.
+        vault
+            .plugin_record_add(
+                "other.plugin",
+                "notes",
+                Some("chamber-1"),
+                r#"{"text":"x"}"#,
+            )
+            .await
+            .unwrap();
+
+        let c1 = vault
+            .plugin_record_list("acme.notes", "notes", Some("chamber-1"))
+            .await
+            .unwrap();
+        assert_eq!(c1.len(), 1);
+        let all = vault
+            .plugin_record_list("acme.notes", "notes", None)
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 2);
+
+        vault.plugin_record_delete(&c1[0].id).await.unwrap();
+        assert_eq!(
+            vault
+                .plugin_record_list("acme.notes", "notes", None)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
