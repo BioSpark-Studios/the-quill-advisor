@@ -36,6 +36,8 @@ pub fn run() {
             commands::chamber_ai_enabled,
             commands::set_chamber_ai,
             commands::invoke_quantum_quill,
+            commands::commit_essay,
+            commands::essay_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running The Quill Advisor");

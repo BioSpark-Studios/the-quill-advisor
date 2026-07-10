@@ -32,6 +32,14 @@ export interface ChatReply {
   model: string;
 }
 
+export interface EssayVersion {
+  id: string;
+  essayId: string;
+  seq: number;
+  message: string;
+  body: string;
+}
+
 // --- Tauri detection --------------------------------------------------------
 
 interface TauriGlobal {
@@ -65,6 +73,10 @@ export const api = {
     invoke<void>("set_chamber_ai", { chamberId, enabled }),
   askQuill: (chamberId: string, prompt: string) =>
     invoke<ChatReply>("invoke_quantum_quill", { chamberId, prompt }),
+  commitEssay: (vaultId: string, chamberId: string, essayId: string, message: string, body: string) =>
+    invoke<EssayVersion>("commit_essay", { vaultId, chamberId, essayId, message, body }),
+  essayHistory: (vaultId: string, essayId: string) =>
+    invoke<EssayVersion[]>("essay_history", { vaultId, essayId }),
 };
 
 // --- In-browser mock backend ------------------------------------------------
@@ -109,6 +121,7 @@ const mockVaults: VaultCard[] = [
 ];
 
 const mockAi: Record<string, boolean> = {};
+const mockEssays: Record<string, EssayVersion[]> = {};
 
 async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   await new Promise((r) => setTimeout(r, 180));
@@ -140,6 +153,23 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     case "set_chamber_ai":
       mockAi[String(args?.chamberId)] = Boolean(args?.enabled);
       return undefined as T;
+    case "commit_essay": {
+      const key = `${args?.vaultId}:${args?.essayId}`;
+      const history = mockEssays[key] ?? (mockEssays[key] = []);
+      const version: EssayVersion = {
+        id: `ev-${Math.random().toString(36).slice(2, 8)}`,
+        essayId: String(args?.essayId),
+        seq: history.length + 1,
+        message: String(args?.message ?? ""),
+        body: String(args?.body ?? ""),
+      };
+      history.push(version);
+      return version as T;
+    }
+    case "essay_history": {
+      const key = `${args?.vaultId}:${args?.essayId}`;
+      return [...(mockEssays[key] ?? [])] as T;
+    }
     case "invoke_quantum_quill": {
       const prompt = String(args?.prompt ?? "");
       const reply: ChatReply = {

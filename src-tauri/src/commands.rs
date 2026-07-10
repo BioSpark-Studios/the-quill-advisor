@@ -39,6 +39,23 @@ pub struct ChatReplyDto {
     pub model: String,
 }
 
+/// One essay revision returned to the Essay Version Control panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EssayVersionDto {
+    pub id: String,
+    pub essay_id: String,
+    pub seq: i64,
+    pub message: String,
+    pub body: String,
+}
+
+impl From<quill_storage::EssayVersion> for EssayVersionDto {
+    fn from(v: quill_storage::EssayVersion) -> Self {
+        Self { id: v.id, essay_id: v.essay_id, seq: v.seq, message: v.message, body: v.body }
+    }
+}
+
 /// Derive a stable chamber `VaultId` from the UI's chamber string so per-chamber
 /// AI authorization can be looked up in `core_db`.
 fn chamber_vault_id(chamber_id: &str) -> VaultId {
@@ -162,6 +179,37 @@ pub async fn set_chamber_ai(
         auth.authorize(state.agent.id());
     }
     state.core.set_ai_authorization(&auth).await.map_err(|e| e.to_string())
+}
+
+/// Commit a new essay revision into the vault's isolated database (git-style).
+#[tauri::command]
+pub async fn commit_essay(
+    state: State<'_, AppState>,
+    vault_id: String,
+    chamber_id: String,
+    essay_id: String,
+    message: String,
+    body: String,
+) -> Result<EssayVersionDto, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let student = db.ensure_student(&chamber_id, "Student").await.map_err(|e| e.to_string())?;
+    let version =
+        db.commit_essay(&essay_id, &student, &message, &body).await.map_err(|e| e.to_string())?;
+    Ok(version.into())
+}
+
+/// Full revision history for an essay, oldest first.
+#[tauri::command]
+pub async fn essay_history(
+    state: State<'_, AppState>,
+    vault_id: String,
+    essay_id: String,
+) -> Result<Vec<EssayVersionDto>, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let history = db.essay_history(&essay_id).await.map_err(|e| e.to_string())?;
+    Ok(history.into_iter().map(EssayVersionDto::from).collect())
 }
 
 /// Ask Quantum Quill inside a chamber. Enforces per-chamber authorization before

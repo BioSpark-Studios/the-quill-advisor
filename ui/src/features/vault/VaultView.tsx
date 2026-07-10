@@ -2,12 +2,20 @@ import { useEffect, useState } from "react";
 import { api, type VaultCard } from "../../lib/ipc";
 import { Orb } from "../orb/Orb";
 import { QuillChat } from "../orb/QuillChat";
+import { EssayVersionControl } from "../tools/EssayVersionControl";
 import { ThemeSwitcher } from "../../components/ThemeSwitcher";
 
-const BENTO: { title: string; hint: string; span: string }[] = [
+type ToolId = "essay-version-control";
+
+const BENTO: { title: string; hint: string; span: string; tool?: ToolId }[] = [
   { title: "Pathway Blueprint", hint: "Academic & activity journey", span: "md:col-span-2 md:row-span-2" },
   { title: "Application Timeline Weaver", hint: "Deadlines & milestones", span: "" },
-  { title: "Essay Version Control", hint: "Draft history & diffs", span: "" },
+  {
+    title: "Essay Version Control",
+    hint: "Draft history & diffs",
+    span: "",
+    tool: "essay-version-control",
+  },
   { title: "College Landscape Atlas", hint: "RAG-based explorer", span: "md:col-span-2" },
   { title: "Recommendation Manager", hint: "Letter tracking", span: "" },
   { title: "Billing & Hours", hint: "Local ledger", span: "" },
@@ -23,6 +31,7 @@ export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => v
   const [activeChamber, setActiveChamber] = useState(chambers[0].id);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [openTool, setOpenTool] = useState<ToolId | null>(null);
 
   useEffect(() => {
     api.chamberAiEnabled(activeChamber).then(setAiEnabled);
@@ -103,16 +112,28 @@ export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => v
         {/* Magic Bento dashboard */}
         <section className="grid auto-rows-[130px] grid-cols-1 gap-4 md:grid-cols-3">
           {BENTO.map((tile) => (
-            <div
+            <button
               key={tile.title}
-              className={`electric-border flex flex-col justify-between rounded-2xl border border-border bg-surface-raised/70 p-4 transition-shadow hover:shadow-glow ${tile.span}`}
+              type="button"
+              onClick={() => tile.tool && setOpenTool(tile.tool)}
+              disabled={!tile.tool}
+              className={`electric-border flex flex-col justify-between rounded-2xl border border-border bg-surface-raised/70 p-4 text-left transition-shadow hover:shadow-glow ${
+                tile.tool ? "cursor-pointer" : "cursor-default opacity-80"
+              } ${tile.span}`}
             >
               <h3 className="font-serif text-base text-ink">{tile.title}</h3>
-              <p className="text-xs text-ink-muted">{tile.hint}</p>
-            </div>
+              <p className="text-xs text-ink-muted">
+                {tile.hint}
+                {tile.tool ? " · open" : ""}
+              </p>
+            </button>
           ))}
         </section>
       </main>
+
+      {openTool === "essay-version-control" && (
+        <EssayVersionControl vault={vault} chamberId={activeChamber} onClose={() => setOpenTool(null)} />
+      )}
 
       <Orb onClick={() => setChatOpen((v) => !v)} active={chatOpen} />
       {chatOpen && (

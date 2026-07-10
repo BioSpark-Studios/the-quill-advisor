@@ -18,11 +18,13 @@ pub mod core_db;
 pub mod error;
 pub mod models;
 pub mod vault_db;
+pub mod vault_manager;
 
 pub use core_db::CoreDb;
 pub use error::{Result, StorageError};
 pub use models::VaultRecord;
 pub use vault_db::{EssayVersion, QaVault, Student, VaultDb};
+pub use vault_manager::VaultManager;
 
 #[cfg(test)]
 mod tests {

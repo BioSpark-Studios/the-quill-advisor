@@ -110,6 +110,25 @@ impl VaultDb {
         Ok(id)
     }
 
+    /// Get the id of the (first) student in a chamber, creating one if none
+    /// exists yet. Essays are owned by a student, so this backs the common case
+    /// of "the student in this chamber."
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn ensure_student(&self, chamber_id: &str, display_name: &str) -> Result<String> {
+        let existing: Option<String> =
+            sqlx::query("SELECT id FROM students WHERE chamber_id = ? ORDER BY created_at LIMIT 1")
+                .bind(chamber_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .map(|r| r.get("id"));
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+        self.add_student(chamber_id, display_name, None).await
+    }
+
     /// List all students in this vault.
     ///
     /// # Errors
