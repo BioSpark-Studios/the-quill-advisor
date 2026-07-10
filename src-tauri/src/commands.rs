@@ -56,6 +56,22 @@ impl From<quill_storage::EssayVersion> for EssayVersionDto {
     }
 }
 
+/// A milestone on a student's application timeline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MilestoneDto {
+    pub id: String,
+    pub title: String,
+    pub due_at: Option<String>,
+    pub done: bool,
+}
+
+impl From<quill_storage::Milestone> for MilestoneDto {
+    fn from(m: quill_storage::Milestone) -> Self {
+        Self { id: m.id, title: m.title, due_at: m.due_at, done: m.done }
+    }
+}
+
 /// Derive a stable chamber `VaultId` from the UI's chamber string so per-chamber
 /// AI authorization can be looked up in `core_db`.
 fn chamber_vault_id(chamber_id: &str) -> VaultId {
@@ -210,6 +226,52 @@ pub async fn essay_history(
     let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
     let history = db.essay_history(&essay_id).await.map_err(|e| e.to_string())?;
     Ok(history.into_iter().map(EssayVersionDto::from).collect())
+}
+
+/// Add a milestone to a chamber's application timeline.
+#[tauri::command]
+pub async fn add_milestone(
+    state: State<'_, AppState>,
+    vault_id: String,
+    chamber_id: String,
+    title: String,
+    due_at: Option<String>,
+) -> Result<MilestoneDto, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let student = db.ensure_student(&chamber_id, "Student").await.map_err(|e| e.to_string())?;
+    let m = db
+        .add_milestone(&student, &title, due_at.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(m.into())
+}
+
+/// List a chamber's milestones, chronologically.
+#[tauri::command]
+pub async fn list_milestones(
+    state: State<'_, AppState>,
+    vault_id: String,
+    chamber_id: String,
+) -> Result<Vec<MilestoneDto>, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let student = db.ensure_student(&chamber_id, "Student").await.map_err(|e| e.to_string())?;
+    let list = db.list_milestones(&student).await.map_err(|e| e.to_string())?;
+    Ok(list.into_iter().map(MilestoneDto::from).collect())
+}
+
+/// Toggle a milestone's completion state.
+#[tauri::command]
+pub async fn set_milestone_done(
+    state: State<'_, AppState>,
+    vault_id: String,
+    id: String,
+    done: bool,
+) -> Result<(), String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    db.set_milestone_done(&id, done).await.map_err(|e| e.to_string())
 }
 
 /// Ask Quantum Quill inside a chamber. Enforces per-chamber authorization before

@@ -23,7 +23,7 @@ pub mod vault_manager;
 pub use core_db::CoreDb;
 pub use error::{Result, StorageError};
 pub use models::VaultRecord;
-pub use vault_db::{EssayVersion, QaVault, Student, VaultDb};
+pub use vault_db::{EssayVersion, Milestone, QaVault, Student, VaultDb};
 pub use vault_manager::VaultManager;
 
 #[cfg(test)]
@@ -151,6 +151,40 @@ mod tests {
         let history = vault.essay_history("essay-1").await.unwrap();
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].body, "Hello world.");
+    }
+
+    #[tokio::test]
+    async fn milestones_sort_and_toggle() {
+        let vault = VaultDb::open_in_memory().await.unwrap();
+        let sid = vault.ensure_student("c1", "Student").await.unwrap();
+        vault
+            .add_milestone(&sid, "Common App due", Some("2026-11-01"))
+            .await
+            .unwrap();
+        let early = vault
+            .add_milestone(&sid, "Early action", Some("2026-10-15"))
+            .await
+            .unwrap();
+        vault
+            .add_milestone(&sid, "Someday task", None)
+            .await
+            .unwrap();
+
+        let list = vault.list_milestones(&sid).await.unwrap();
+        assert_eq!(list.len(), 3);
+        // Earliest due date first; the undated one sorts last.
+        assert_eq!(list[0].title, "Early action");
+        assert_eq!(list[2].title, "Someday task");
+
+        vault.set_milestone_done(&early.id, true).await.unwrap();
+        let done = vault
+            .list_milestones(&sid)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|m| m.id == early.id)
+            .unwrap();
+        assert!(done.done);
     }
 
     #[tokio::test]

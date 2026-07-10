@@ -38,6 +38,9 @@ pub fn run() {
             commands::invoke_quantum_quill,
             commands::commit_essay,
             commands::essay_history,
+            commands::add_milestone,
+            commands::list_milestones,
+            commands::set_milestone_done,
         ])
         .run(tauri::generate_context!())
         .expect("error while running The Quill Advisor");

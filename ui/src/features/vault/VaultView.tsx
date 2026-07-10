@@ -3,13 +3,19 @@ import { api, type VaultCard } from "../../lib/ipc";
 import { Orb } from "../orb/Orb";
 import { QuillChat } from "../orb/QuillChat";
 import { EssayVersionControl } from "../tools/EssayVersionControl";
+import { TimelineWeaver } from "../tools/TimelineWeaver";
 import { ThemeSwitcher } from "../../components/ThemeSwitcher";
 
-type ToolId = "essay-version-control";
+type ToolId = "essay-version-control" | "timeline-weaver";
 
 const BENTO: { title: string; hint: string; span: string; tool?: ToolId }[] = [
   { title: "Pathway Blueprint", hint: "Academic & activity journey", span: "md:col-span-2 md:row-span-2" },
-  { title: "Application Timeline Weaver", hint: "Deadlines & milestones", span: "" },
+  {
+    title: "Application Timeline Weaver",
+    hint: "Deadlines & milestones",
+    span: "",
+    tool: "timeline-weaver",
+  },
   {
     title: "Essay Version Control",
     hint: "Draft history & diffs",
@@ -133,6 +139,9 @@ export function VaultView({ vault, onBack }: { vault: VaultCard; onBack: () => v
 
       {openTool === "essay-version-control" && (
         <EssayVersionControl vault={vault} chamberId={activeChamber} onClose={() => setOpenTool(null)} />
+      )}
+      {openTool === "timeline-weaver" && (
+        <TimelineWeaver vault={vault} chamberId={activeChamber} onClose={() => setOpenTool(null)} />
       )}
 
       <Orb onClick={() => setChatOpen((v) => !v)} active={chatOpen} />

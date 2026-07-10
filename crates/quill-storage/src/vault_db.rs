@@ -46,6 +46,21 @@ pub struct EssayVersion {
     pub body: String,
 }
 
+/// An application milestone / deadline on a student's timeline.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Milestone {
+    /// Milestone id.
+    pub id: String,
+    /// Owning student.
+    pub student_id: String,
+    /// What is due.
+    pub title: String,
+    /// Optional due date (ISO `YYYY-MM-DD`).
+    pub due_at: Option<String>,
+    /// Whether it's been completed.
+    pub done: bool,
+}
+
 /// Handle to a single isolated vault database.
 #[derive(Clone)]
 pub struct VaultDb {
@@ -127,6 +142,74 @@ impl VaultDb {
             return Ok(id);
         }
         self.add_student(chamber_id, display_name, None).await
+    }
+
+    /// Add a milestone for a student, returning it.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn add_milestone(
+        &self,
+        student_id: &str,
+        title: &str,
+        due_at: Option<&str>,
+    ) -> Result<Milestone> {
+        let milestone = Milestone {
+            id: uuid::Uuid::new_v4().to_string(),
+            student_id: student_id.to_string(),
+            title: title.to_string(),
+            due_at: due_at.map(ToString::to_string),
+            done: false,
+        };
+        sqlx::query(
+            "INSERT INTO milestones (id, student_id, title, due_at, done, created_at)
+             VALUES (?, ?, ?, ?, 0, ?)",
+        )
+        .bind(&milestone.id)
+        .bind(&milestone.student_id)
+        .bind(&milestone.title)
+        .bind(&milestone.due_at)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+        Ok(milestone)
+    }
+
+    /// List a student's milestones, undated last, then by due date.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn list_milestones(&self, student_id: &str) -> Result<Vec<Milestone>> {
+        let rows = sqlx::query(
+            "SELECT id, student_id, title, due_at, done FROM milestones
+             WHERE student_id = ? ORDER BY due_at IS NULL, due_at, created_at",
+        )
+        .bind(student_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| Milestone {
+                id: r.get("id"),
+                student_id: r.get("student_id"),
+                title: r.get("title"),
+                due_at: r.get("due_at"),
+                done: r.get::<i64, _>("done") != 0,
+            })
+            .collect())
+    }
+
+    /// Mark a milestone done or not-done.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn set_milestone_done(&self, id: &str, done: bool) -> Result<()> {
+        sqlx::query("UPDATE milestones SET done = ? WHERE id = ?")
+            .bind(i64::from(done))
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// List all students in this vault.

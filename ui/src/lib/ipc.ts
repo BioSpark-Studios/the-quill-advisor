@@ -40,6 +40,13 @@ export interface EssayVersion {
   body: string;
 }
 
+export interface Milestone {
+  id: string;
+  title: string;
+  dueAt: string | null;
+  done: boolean;
+}
+
 // --- Tauri detection --------------------------------------------------------
 
 interface TauriGlobal {
@@ -77,6 +84,12 @@ export const api = {
     invoke<EssayVersion>("commit_essay", { vaultId, chamberId, essayId, message, body }),
   essayHistory: (vaultId: string, essayId: string) =>
     invoke<EssayVersion[]>("essay_history", { vaultId, essayId }),
+  addMilestone: (vaultId: string, chamberId: string, title: string, dueAt: string | null) =>
+    invoke<Milestone>("add_milestone", { vaultId, chamberId, title, dueAt }),
+  listMilestones: (vaultId: string, chamberId: string) =>
+    invoke<Milestone[]>("list_milestones", { vaultId, chamberId }),
+  setMilestoneDone: (vaultId: string, id: string, done: boolean) =>
+    invoke<void>("set_milestone_done", { vaultId, id, done }),
 };
 
 // --- In-browser mock backend ------------------------------------------------
@@ -122,6 +135,16 @@ const mockVaults: VaultCard[] = [
 
 const mockAi: Record<string, boolean> = {};
 const mockEssays: Record<string, EssayVersion[]> = {};
+const mockMilestones: Record<string, Milestone[]> = {};
+
+function sortMilestones(list: Milestone[]): Milestone[] {
+  return [...list].sort((a, b) => {
+    if (a.dueAt === b.dueAt) return 0;
+    if (a.dueAt === null) return 1;
+    if (b.dueAt === null) return -1;
+    return a.dueAt < b.dueAt ? -1 : 1;
+  });
+}
 
 async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   await new Promise((r) => setTimeout(r, 180));
@@ -169,6 +192,29 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     case "essay_history": {
       const key = `${args?.vaultId}:${args?.essayId}`;
       return [...(mockEssays[key] ?? [])] as T;
+    }
+    case "add_milestone": {
+      const key = `${args?.vaultId}:${args?.chamberId}`;
+      const list = mockMilestones[key] ?? (mockMilestones[key] = []);
+      const m: Milestone = {
+        id: `m-${Math.random().toString(36).slice(2, 8)}`,
+        title: String(args?.title ?? ""),
+        dueAt: (args?.dueAt as string | null) ?? null,
+        done: false,
+      };
+      list.push(m);
+      return m as T;
+    }
+    case "list_milestones": {
+      const key = `${args?.vaultId}:${args?.chamberId}`;
+      return sortMilestones(mockMilestones[key] ?? []) as T;
+    }
+    case "set_milestone_done": {
+      for (const list of Object.values(mockMilestones)) {
+        const m = list.find((x) => x.id === args?.id);
+        if (m) m.done = Boolean(args?.done);
+      }
+      return undefined as T;
     }
     case "invoke_quantum_quill": {
       const prompt = String(args?.prompt ?? "");
