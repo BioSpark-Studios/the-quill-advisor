@@ -1,0 +1,17 @@
+[package]
+name = "quill-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Pure domain layer for The Quill Advisor: vault hierarchy, gate security, compliance, agent identity."
+
+[dependencies]
+serde.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

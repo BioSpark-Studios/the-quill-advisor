@@ -1,6 +1,6 @@
 # Auto-request reviews for critical paths
-/apps/api     @your-org/backend-team
-/apps/web     @your-org/frontend-team
-/libs/ui      @your-org/frontend-team
-/ops/infra    @your-org/infra-team
-/.github      @your-org/devops
+/crates/        @BioSpark-Studios/backend-team
+/src-tauri/     @BioSpark-Studios/backend-team
+/ui/            @BioSpark-Studios/frontend-team
+/docs/          @BioSpark-Studios/backend-team
+/.github/       @BioSpark-Studios/devops
