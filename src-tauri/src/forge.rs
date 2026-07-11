@@ -112,7 +112,59 @@ fn builtin_manifests() -> Vec<PluginManifest> {
             config_schema: vec![],
             pricing: Pricing::Free,
         },
+        // Phase 5 advising tools. These native components persist their data
+        // through the generic, capability-gated plugin record store.
+        native_record_plugin(
+            "biospark.pathway-blueprint",
+            "Pathway Blueprint",
+            "A four-year academic plan — courses, activities, and milestones by grade.",
+            "🧭",
+            "PathwayBlueprint",
+            TileLayout { w: 2, h: 2 },
+        ),
+        native_record_plugin(
+            "biospark.college-atlas",
+            "College Landscape Atlas",
+            "Browse colleges and build a balanced reach/target/safety shortlist.",
+            "🗺️",
+            "CollegeAtlas",
+            TileLayout { w: 2, h: 2 },
+        ),
+        native_record_plugin(
+            "biospark.narrative-loom",
+            "Aetherial Narrative Loom",
+            "Capture story threads and weave them into candidate essay angles.",
+            "🧵",
+            "NarrativeLoom",
+            TileLayout { w: 2, h: 1 },
+        ),
     ]
+}
+
+/// A built-in native plugin that stores its data in the generic record store.
+fn native_record_plugin(
+    id: &str,
+    name: &str,
+    description: &str,
+    icon: &str,
+    component: &str,
+    default_layout: TileLayout,
+) -> PluginManifest {
+    PluginManifest {
+        id: id.into(),
+        name: name.into(),
+        description: description.into(),
+        version: "1.0.0".into(),
+        author: "BioSpark Studios".into(),
+        icon: icon.into(),
+        category: PluginCategory::Advising,
+        scope: PluginScope::Chamber,
+        capabilities: vec![Capability::StorePluginRecords],
+        kind: PluginKind::Native { component: component.into() },
+        default_layout,
+        config_schema: vec![],
+        pricing: Pricing::Free,
+    }
 }
 
 /// Declarative store plugins — defined entirely as data (no app code).
