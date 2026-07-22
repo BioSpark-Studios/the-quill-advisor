@@ -668,9 +668,20 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       return undefined as T;
     }
     case "invoke_quantum_quill": {
+      // Mirrors the real backend: dispatch is gated by whether the counselor
+      // has enabled Quantum Quill for this chamber.
+      if (!mockAi[String(args?.chamberId)]) {
+        throw new Error("Quantum Quill is not enabled for this chamber.");
+      }
       const prompt = String(args?.prompt ?? "");
+      const isCoaching = prompt.toLowerCase().includes("essay voice coach");
       const reply: ChatReply = {
-        text: `Here's a start on "${prompt.slice(0, 60)}": open with a specific, sensory moment that only you could have written, then connect it to what it revealed about you. (mock reply — connect a live model to see real drafting.)`,
+        text: isCoaching
+          ? "• Strong opening image — keep it, it's specific to you.\n" +
+            "• The middle section summarizes rather than shows; pick one moment and slow down.\n" +
+            "• Your voice comes through clearest in the last two sentences — that tone is the one to write the whole essay in.\n" +
+            "(mock coaching reply — connect a live model for real feedback.)"
+          : `Here's a start on "${prompt.slice(0, 60)}": open with a specific, sensory moment that only you could have written, then connect it to what it revealed about you. (mock reply — connect a live model to see real drafting.)`,
         provider: "mock",
         model: "mock",
       };
