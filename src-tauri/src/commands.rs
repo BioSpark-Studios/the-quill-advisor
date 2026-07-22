@@ -278,6 +278,60 @@ pub async fn essay_history(
     Ok(history.into_iter().map(EssayVersionDto::from).collect())
 }
 
+/// A named essay prompt slot, as offered in the Essay Version Control picker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EssaySlotDto {
+    pub id: String,
+    pub label: String,
+    pub word_limit: Option<i64>,
+}
+
+impl From<quill_storage::EssaySlot> for EssaySlotDto {
+    fn from(s: quill_storage::EssaySlot) -> Self {
+        Self { id: s.id, label: s.label, word_limit: s.word_limit }
+    }
+}
+
+/// List the vault's custom essay slots (on top of the fixed defaults the UI
+/// always offers).
+#[tauri::command]
+pub async fn get_essay_slots(
+    state: State<'_, AppState>,
+    vault_id: String,
+) -> Result<Vec<EssaySlotDto>, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let slots = db.list_essay_slots().await.map_err(|e| e.to_string())?;
+    Ok(slots.into_iter().map(EssaySlotDto::from).collect())
+}
+
+/// Add a custom essay slot (e.g. a school-specific supplement).
+#[tauri::command]
+pub async fn add_essay_slot(
+    state: State<'_, AppState>,
+    vault_id: String,
+    label: String,
+    word_limit: Option<i64>,
+) -> Result<EssaySlotDto, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let slot = db.add_essay_slot(&label, word_limit).await.map_err(|e| e.to_string())?;
+    Ok(slot.into())
+}
+
+/// Remove a custom essay slot from the picker (its committed revisions stay).
+#[tauri::command]
+pub async fn delete_essay_slot(
+    state: State<'_, AppState>,
+    vault_id: String,
+    id: String,
+) -> Result<(), String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    db.delete_essay_slot(&id).await.map_err(|e| e.to_string())
+}
+
 // --- BioSpark Forge ---------------------------------------------------------
 
 /// A plugin offered in the store / manager, with its trust + install state.

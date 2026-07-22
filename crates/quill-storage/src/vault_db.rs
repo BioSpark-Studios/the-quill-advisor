@@ -56,6 +56,18 @@ pub struct PluginRecord {
     pub data: String,
 }
 
+/// A named essay prompt slot (e.g. "Common App", "Why Cornell?"). The essay's
+/// revision history is keyed by this id in `essay_versions`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EssaySlot {
+    /// Stable id used as the `essay_id` in `essay_versions`.
+    pub id: String,
+    /// Display label.
+    pub label: String,
+    /// Word limit shown against the draft's live word count, if the prompt has one.
+    pub word_limit: Option<i64>,
+}
+
 /// One entry in the vault's hour-tracking ledger: time worked against the
 /// family's retainer, optionally attributed to a specific student.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -264,6 +276,52 @@ impl VaultDb {
         .bind(value)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    /// List the vault's custom essay slots (on top of the three defaults the UI
+    /// always offers). Empty until the counselor adds one.
+    ///
+    /// # Errors
+    /// Propagates database or deserialization errors.
+    pub async fn list_essay_slots(&self) -> Result<Vec<EssaySlot>> {
+        match self.get_meta("essay_slots").await? {
+            Some(json) => Ok(serde_json::from_str(&json)?),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Add a custom essay slot (e.g. a school-specific supplement), returning it.
+    ///
+    /// # Errors
+    /// Propagates database or serialization errors.
+    pub async fn add_essay_slot(&self, label: &str, word_limit: Option<i64>) -> Result<EssaySlot> {
+        let mut slots = self.list_essay_slots().await?;
+        let slot = EssaySlot {
+            id: format!("custom-{}", uuid::Uuid::new_v4()),
+            label: label.to_string(),
+            word_limit,
+        };
+        slots.push(slot.clone());
+        self.set_meta("essay_slots", &serde_json::to_string(&slots)?)
+            .await?;
+        Ok(slot)
+    }
+
+    /// Remove a custom essay slot. Its committed revisions are left in place —
+    /// only the slot's visibility in the picker is removed.
+    ///
+    /// # Errors
+    /// Propagates database or serialization errors.
+    pub async fn delete_essay_slot(&self, id: &str) -> Result<()> {
+        let slots: Vec<EssaySlot> = self
+            .list_essay_slots()
+            .await?
+            .into_iter()
+            .filter(|s| s.id != id)
+            .collect();
+        self.set_meta("essay_slots", &serde_json::to_string(&slots)?)
+            .await?;
         Ok(())
     }
 

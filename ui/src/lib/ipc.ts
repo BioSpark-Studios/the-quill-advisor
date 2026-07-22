@@ -92,6 +92,12 @@ export interface EssayVersion {
   body: string;
 }
 
+export interface EssaySlot {
+  id: string;
+  label: string;
+  wordLimit: number | null;
+}
+
 export interface Milestone {
   id: string;
   title: string;
@@ -240,6 +246,11 @@ export const api = {
     invoke<EssayVersion>("commit_essay", { vaultId, chamberId, essayId, message, body }),
   essayHistory: (vaultId: string, essayId: string) =>
     invoke<EssayVersion[]>("essay_history", { vaultId, essayId }),
+  getEssaySlots: (vaultId: string) => invoke<EssaySlot[]>("get_essay_slots", { vaultId }),
+  addEssaySlot: (vaultId: string, label: string, wordLimit: number | null) =>
+    invoke<EssaySlot>("add_essay_slot", { vaultId, label, wordLimit }),
+  deleteEssaySlot: (vaultId: string, id: string) =>
+    invoke<void>("delete_essay_slot", { vaultId, id }),
   addMilestone: (vaultId: string, chamberId: string, title: string, dueAt: string | null) =>
     invoke<Milestone>("add_milestone", { vaultId, chamberId, title, dueAt }),
   listMilestones: (vaultId: string, chamberId: string) =>
@@ -337,6 +348,7 @@ const mockVaults: VaultCard[] = [
 const mockAi: Record<string, boolean> = {};
 const mockEssays: Record<string, EssayVersion[]> = {};
 const mockMilestones: Record<string, Milestone[]> = {};
+const mockEssaySlots: Record<string, EssaySlot[]> = {};
 const mockRetainer: Record<string, number> = { "v-rivera": 2520, "v-okafor": 1620 };
 const mockBillingEntries: Record<string, BillingEntry[]> = {
   "v-rivera": [
@@ -656,6 +668,29 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     case "essay_history": {
       const key = `${args?.vaultId}:${args?.essayId}`;
       return [...(mockEssays[key] ?? [])] as T;
+    }
+    case "get_essay_slots": {
+      return [...(mockEssaySlots[String(args?.vaultId)] ?? [])] as T;
+    }
+    case "add_essay_slot": {
+      const vaultId = String(args?.vaultId);
+      const list = mockEssaySlots[vaultId] ?? (mockEssaySlots[vaultId] = []);
+      const slot: EssaySlot = {
+        id: `custom-${Math.random().toString(36).slice(2, 8)}`,
+        label: String(args?.label ?? ""),
+        wordLimit: (args?.wordLimit as number | null) ?? null,
+      };
+      list.push(slot);
+      return slot as T;
+    }
+    case "delete_essay_slot": {
+      const vaultId = String(args?.vaultId);
+      const list = mockEssaySlots[vaultId];
+      if (list) {
+        const i = list.findIndex((s) => s.id === args?.id);
+        if (i >= 0) list.splice(i, 1);
+      }
+      return undefined as T;
     }
     case "add_milestone": {
       const key = `${args?.vaultId}:${args?.chamberId}`;
