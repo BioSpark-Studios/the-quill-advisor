@@ -23,7 +23,7 @@ pub mod vault_manager;
 pub use core_db::CoreDb;
 pub use error::{Result, StorageError};
 pub use models::VaultRecord;
-pub use vault_db::{EssayVersion, Milestone, PluginRecord, QaVault, Student, VaultDb};
+pub use vault_db::{EssaySlot, EssayVersion, Milestone, PluginRecord, QaVault, Student, VaultDb};
 pub use vault_manager::VaultManager;
 
 #[cfg(test)]
@@ -151,6 +151,26 @@ mod tests {
         let history = vault.essay_history("essay-1").await.unwrap();
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].body, "Hello world.");
+    }
+
+    #[tokio::test]
+    async fn essay_slots_are_custom_and_removable() {
+        let vault = VaultDb::open_in_memory().await.unwrap();
+        assert!(vault.list_essay_slots().await.unwrap().is_empty());
+
+        let slot = vault
+            .add_essay_slot("Why Cornell?", Some(650))
+            .await
+            .unwrap();
+        assert_eq!(slot.label, "Why Cornell?");
+        assert_eq!(slot.word_limit, Some(650));
+
+        let slots = vault.list_essay_slots().await.unwrap();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].id, slot.id);
+
+        vault.delete_essay_slot(&slot.id).await.unwrap();
+        assert!(vault.list_essay_slots().await.unwrap().is_empty());
     }
 
     #[tokio::test]

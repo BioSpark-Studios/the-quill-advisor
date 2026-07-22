@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type EssayVersion } from "../../lib/ipc";
+import { api, type EssaySlot, type EssayVersion } from "../../lib/ipc";
 import type { PluginProps } from "../../plugins/registry";
 
-const ESSAYS = [
-  { id: "personal-statement", label: "Personal Statement" },
-  { id: "common-app", label: "Common App" },
-  { id: "supplement-1", label: "Supplement 1" },
+/** Always-available prompts, with the word limits colleges typically set. */
+const DEFAULT_ESSAYS: EssaySlot[] = [
+  { id: "personal-statement", label: "Personal Statement", wordLimit: 650 },
+  { id: "common-app", label: "Common App", wordLimit: 650 },
+  { id: "supplement-1", label: "Supplement 1", wordLimit: 250 },
 ];
+
+function wordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
 
 type DiffLine = { type: "same" | "add" | "del"; text: string };
 
@@ -39,12 +45,17 @@ function lineDiff(a: string, b: string): DiffLine[] {
  * one before it.
  */
 export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) {
-  const [essayId, setEssayId] = useState(ESSAYS[0].id);
+  const [customSlots, setCustomSlots] = useState<EssaySlot[]>([]);
+  const essays = useMemo(() => [...DEFAULT_ESSAYS, ...customSlots], [customSlots]);
+  const [essayId, setEssayId] = useState(DEFAULT_ESSAYS[0].id);
   const [history, setHistory] = useState<EssayVersion[]>([]);
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [addingSlot, setAddingSlot] = useState(false);
+  const [newSlotLabel, setNewSlotLabel] = useState("");
+  const [newSlotLimit, setNewSlotLimit] = useState("");
 
   async function refresh(id: string) {
     const h = await api.essayHistory(vault.id, id);
@@ -52,6 +63,11 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
     setSelected(h.length ? h.length - 1 : null);
     setDraft(h.length ? h[h.length - 1].body : "");
   }
+
+  useEffect(() => {
+    api.getEssaySlots(vault.id).then(setCustomSlots);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vault.id]);
 
   useEffect(() => {
     refresh(essayId);
@@ -70,6 +86,36 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
       setBusy(false);
     }
   }
+
+  async function addSlot() {
+    if (!newSlotLabel.trim() || busy) return;
+    const limit = newSlotLimit.trim() ? Number(newSlotLimit) : null;
+    setBusy(true);
+    try {
+      const slot = await api.addEssaySlot(
+        vault.id,
+        newSlotLabel.trim(),
+        limit && Number.isFinite(limit) ? limit : null,
+      );
+      setCustomSlots((prev) => [...prev, slot]);
+      setEssayId(slot.id);
+      setNewSlotLabel("");
+      setNewSlotLimit("");
+      setAddingSlot(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeSlot(id: string) {
+    setCustomSlots((prev) => prev.filter((s) => s.id !== id));
+    if (essayId === id) setEssayId(DEFAULT_ESSAYS[0].id);
+    await api.deleteEssaySlot(vault.id, id);
+  }
+
+  const current = essays.find((e) => e.id === essayId);
+  const words = wordCount(draft);
+  const overLimit = current?.wordLimit != null && words > current.wordLimit;
 
   const diff = useMemo(() => {
     if (selected === null || history.length === 0) return null;
@@ -92,12 +138,68 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
               onChange={(e) => setEssayId(e.target.value)}
               className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-ink outline-none"
             >
-              {ESSAYS.map((e) => (
+              {essays.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.label}
                 </option>
               ))}
             </select>
+            {current && customSlots.some((s) => s.id === current.id) && (
+              <button
+                onClick={() => removeSlot(current.id)}
+                className="text-xs text-ink-muted hover:text-red-500"
+                title="Remove this custom essay slot"
+              >
+                remove
+              </button>
+            )}
+            {addingSlot ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  addSlot();
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  autoFocus
+                  value={newSlotLabel}
+                  onChange={(e) => setNewSlotLabel(e.target.value)}
+                  placeholder="e.g. 'Why Cornell?'"
+                  className="w-32 rounded-lg border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-primary"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  value={newSlotLimit}
+                  onChange={(e) => setNewSlotLimit(e.target.value)}
+                  placeholder="words"
+                  className="w-16 rounded-lg border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-primary"
+                />
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="rounded-lg bg-primary px-2 py-1 text-xs font-medium text-surface-raised disabled:opacity-50"
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddingSlot(false)}
+                  className="text-xs text-ink-muted hover:text-ink"
+                >
+                  cancel
+                </button>
+              </form>
+            ) : (
+              <button
+                onClick={() => setAddingSlot(true)}
+                className="text-xs text-ink-muted hover:text-primary"
+                title="Add a school-specific supplement"
+              >
+                + Add essay
+              </button>
+            )}
             <span className="text-xs text-ink-muted">{vault.name}</span>
           </div>
           <button onClick={onClose} className="text-ink-muted hover:text-ink" aria-label="Close">
@@ -114,6 +216,13 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
               placeholder="Write or paste the essay draft…"
               className="h-1/2 resize-none border-b border-border bg-surface p-4 font-serif text-sm leading-relaxed text-ink outline-none"
             />
+            <div className="flex items-center justify-between border-b border-border px-4 py-1.5">
+              <span className={`text-xs ${overLimit ? "font-semibold text-red-500" : "text-ink-muted"}`}>
+                {words} word{words === 1 ? "" : "s"}
+                {current?.wordLimit != null ? ` / ${current.wordLimit}` : ""}
+                {overLimit ? " · over limit" : ""}
+              </span>
+            </div>
             <div className="flex items-center gap-2 border-b border-border p-3">
               <input
                 value={message}
