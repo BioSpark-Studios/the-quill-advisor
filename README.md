@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="develop/src-tauri/icons/icon.png" alt="The Quill Advisor — BioSpark Studios" width="400">
+  <img src="src-tauri/icons/icon.png" alt="The Quill Advisor — BioSpark Studios" width="400">
 </p>
 
 <h1 align="center">The Quill Advisor</h1>
