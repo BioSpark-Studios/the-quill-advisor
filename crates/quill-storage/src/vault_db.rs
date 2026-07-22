@@ -46,6 +46,31 @@ pub struct EssayVersion {
     pub body: String,
 }
 
+/// A generic record owned by a declarative (Forge) plugin. `data` is an opaque
+/// JSON string whose shape is defined by the plugin's UI schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PluginRecord {
+    /// Record id.
+    pub id: String,
+    /// The plugin's stored JSON payload.
+    pub data: String,
+}
+
+/// An application milestone / deadline on a student's timeline.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Milestone {
+    /// Milestone id.
+    pub id: String,
+    /// Owning student.
+    pub student_id: String,
+    /// What is due.
+    pub title: String,
+    /// Optional due date (ISO `YYYY-MM-DD`).
+    pub due_at: Option<String>,
+    /// Whether it's been completed.
+    pub done: bool,
+}
+
 /// Handle to a single isolated vault database.
 #[derive(Clone)]
 pub struct VaultDb {
@@ -108,6 +133,166 @@ impl VaultDb {
         .execute(&self.pool)
         .await?;
         Ok(id)
+    }
+
+    /// Get the id of the (first) student in a chamber, creating one if none
+    /// exists yet. Essays are owned by a student, so this backs the common case
+    /// of "the student in this chamber."
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn ensure_student(&self, chamber_id: &str, display_name: &str) -> Result<String> {
+        let existing: Option<String> =
+            sqlx::query("SELECT id FROM students WHERE chamber_id = ? ORDER BY created_at LIMIT 1")
+                .bind(chamber_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .map(|r| r.get("id"));
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+        self.add_student(chamber_id, display_name, None).await
+    }
+
+    /// Add a milestone for a student, returning it.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn add_milestone(
+        &self,
+        student_id: &str,
+        title: &str,
+        due_at: Option<&str>,
+    ) -> Result<Milestone> {
+        let milestone = Milestone {
+            id: uuid::Uuid::new_v4().to_string(),
+            student_id: student_id.to_string(),
+            title: title.to_string(),
+            due_at: due_at.map(ToString::to_string),
+            done: false,
+        };
+        sqlx::query(
+            "INSERT INTO milestones (id, student_id, title, due_at, done, created_at)
+             VALUES (?, ?, ?, ?, 0, ?)",
+        )
+        .bind(&milestone.id)
+        .bind(&milestone.student_id)
+        .bind(&milestone.title)
+        .bind(&milestone.due_at)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+        Ok(milestone)
+    }
+
+    /// List a student's milestones, undated last, then by due date.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn list_milestones(&self, student_id: &str) -> Result<Vec<Milestone>> {
+        let rows = sqlx::query(
+            "SELECT id, student_id, title, due_at, done FROM milestones
+             WHERE student_id = ? ORDER BY due_at IS NULL, due_at, created_at",
+        )
+        .bind(student_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| Milestone {
+                id: r.get("id"),
+                student_id: r.get("student_id"),
+                title: r.get("title"),
+                due_at: r.get("due_at"),
+                done: r.get::<i64, _>("done") != 0,
+            })
+            .collect())
+    }
+
+    /// Mark a milestone done or not-done.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn set_milestone_done(&self, id: &str, done: bool) -> Result<()> {
+        sqlx::query("UPDATE milestones SET done = ? WHERE id = ?")
+            .bind(i64::from(done))
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Add a plugin record into a namespaced collection.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn plugin_record_add(
+        &self,
+        plugin_id: &str,
+        collection: &str,
+        chamber_id: Option<&str>,
+        data: &str,
+    ) -> Result<PluginRecord> {
+        let record = PluginRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            data: data.to_string(),
+        };
+        sqlx::query(
+            "INSERT INTO plugin_records (id, plugin_id, collection, chamber_id, data, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&record.id)
+        .bind(plugin_id)
+        .bind(collection)
+        .bind(chamber_id)
+        .bind(&record.data)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+        Ok(record)
+    }
+
+    /// List a plugin collection's records (optionally scoped to a chamber),
+    /// oldest first.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn plugin_record_list(
+        &self,
+        plugin_id: &str,
+        collection: &str,
+        chamber_id: Option<&str>,
+    ) -> Result<Vec<PluginRecord>> {
+        let rows = sqlx::query(
+            "SELECT id, data FROM plugin_records
+             WHERE plugin_id = ? AND collection = ?
+               AND (?3 IS NULL OR chamber_id = ?3)
+             ORDER BY created_at",
+        )
+        .bind(plugin_id)
+        .bind(collection)
+        .bind(chamber_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| PluginRecord {
+                id: r.get("id"),
+                data: r.get("data"),
+            })
+            .collect())
+    }
+
+    /// Delete a plugin record by id.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn plugin_record_delete(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM plugin_records WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// List all students in this vault.

@@ -29,5 +29,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 quill-core = { path = "../crates/quill-core" }
+quill-plugin = { path = "../crates/quill-plugin" }
 quill-storage = { path = "../crates/quill-storage" }
 quill-ai = { path = "../crates/quill-ai" }
+ed25519-dalek = "2"

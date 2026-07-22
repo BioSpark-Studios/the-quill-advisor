@@ -224,6 +224,39 @@ impl CoreDb {
         Ok(())
     }
 
+    // --- vault composition ---------------------------------------------------
+
+    /// Load a vault's plugin composition (enabled plugins + customization).
+    /// Returns a default (empty) composition if none is stored yet.
+    ///
+    /// # Errors
+    /// Propagates database and deserialization errors.
+    pub async fn vault_composition(
+        &self,
+        vault: VaultId,
+    ) -> Result<quill_plugin::VaultComposition> {
+        match self.get_setting(&format!("composition:{vault}")).await? {
+            Some(json) => Ok(serde_json::from_str(&json)?),
+            None => Ok(quill_plugin::VaultComposition::default()),
+        }
+    }
+
+    /// Persist a vault's plugin composition.
+    ///
+    /// # Errors
+    /// Propagates database and serialization errors.
+    pub async fn set_vault_composition(
+        &self,
+        vault: VaultId,
+        comp: &quill_plugin::VaultComposition,
+    ) -> Result<()> {
+        self.upsert_setting(
+            &format!("composition:{vault}"),
+            &serde_json::to_string(comp)?,
+        )
+        .await
+    }
+
     // --- audit log -----------------------------------------------------------
 
     /// Append an audit entry.
