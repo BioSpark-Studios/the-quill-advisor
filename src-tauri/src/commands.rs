@@ -21,7 +21,9 @@ pub struct VaultCardDto {
     pub stage: String,
     pub students: i64,
     pub chambers: i64,
-    pub hour_balance: i64,
+    /// Retainer hours remaining (retainer minus time logged), rounded to the
+    /// nearest tenth of an hour.
+    pub hour_balance: f64,
     pub last_activity: String,
     /// Vault crest/icon, sourced from the vault composition's customization.
     pub icon: Option<String>,
@@ -30,12 +32,13 @@ pub struct VaultCardDto {
 }
 
 /// Card metadata persisted alongside a vault node (settings key `card:{id}`).
+/// The hour balance shown on the card is computed live from the vault's
+/// billing ledger, not stored here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct CardMeta {
     stage: String,
     students: i64,
     chambers: i64,
-    hour_balance: i64,
 }
 
 /// The Quill chat reply returned to the UI.
@@ -92,6 +95,18 @@ async fn card_meta(state: &AppState, id: VaultId) -> CardMeta {
     }
 }
 
+/// Retainer hours remaining for a vault, rounded to the nearest tenth. A vault
+/// that can't be opened (or has no retainer set) simply shows zero rather than
+/// failing the whole card list.
+async fn hour_balance(state: &AppState, id: VaultId) -> f64 {
+    let Ok(db) = state.vaults.vault(id).await else {
+        return 0.0;
+    };
+    let retainer = db.retainer_minutes().await.unwrap_or(0);
+    let used = db.billing_minutes_used().await.unwrap_or(0);
+    ((retainer - used) as f64 / 60.0 * 10.0).round() / 10.0
+}
+
 /// Backend health check, run during the splash.
 #[tauri::command]
 pub async fn health_check(state: State<'_, AppState>) -> Result<bool, String> {
@@ -113,7 +128,7 @@ pub async fn get_vault_hierarchy(state: State<'_, AppState>) -> Result<Vec<Vault
             stage: if meta.stage.is_empty() { "active".into() } else { meta.stage },
             students: meta.students,
             chambers: meta.chambers,
-            hour_balance: meta.hour_balance,
+            hour_balance: hour_balance(&state, rec.node.id).await,
             last_activity: rec.created_at.format("%Y-%m-%d").to_string(),
             icon: custom.icon,
             accent: custom.accent,
@@ -178,7 +193,7 @@ pub async fn create_vault(
         stage,
         students: 0,
         chambers: 0,
-        hour_balance: 0,
+        hour_balance: 0.0,
         last_activity: "just now".into(),
         icon: custom.icon,
         accent: custom.accent,
@@ -485,6 +500,104 @@ pub async fn set_milestone_done(
     let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
     let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
     db.set_milestone_done(&id, done).await.map_err(|e| e.to_string())
+}
+
+// --- Billing Ledger ---------------------------------------------------------
+
+/// One entry in the hour-tracking ledger, as shown in the Billing panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingEntryDto {
+    pub id: String,
+    pub student_id: Option<String>,
+    pub minutes: i64,
+    pub description: String,
+    pub billed_at: String,
+}
+
+impl From<quill_storage::BillingEntry> for BillingEntryDto {
+    fn from(e: quill_storage::BillingEntry) -> Self {
+        Self {
+            id: e.id,
+            student_id: e.student_id,
+            minutes: e.minutes,
+            description: e.description,
+            billed_at: e.billed_at,
+        }
+    }
+}
+
+/// A vault's full billing ledger: the retainer, what's been used, what
+/// remains, and the entry history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingLedgerDto {
+    pub retainer_minutes: i64,
+    pub used_minutes: i64,
+    pub balance_minutes: i64,
+    pub entries: Vec<BillingEntryDto>,
+}
+
+/// Read a vault's full billing ledger.
+#[tauri::command]
+pub async fn get_billing_ledger(
+    state: State<'_, AppState>,
+    vault_id: String,
+) -> Result<BillingLedgerDto, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let retainer_minutes = db.retainer_minutes().await.map_err(|e| e.to_string())?;
+    let used_minutes = db.billing_minutes_used().await.map_err(|e| e.to_string())?;
+    let entries = db.list_billing_entries().await.map_err(|e| e.to_string())?;
+    Ok(BillingLedgerDto {
+        retainer_minutes,
+        used_minutes,
+        balance_minutes: retainer_minutes - used_minutes,
+        entries: entries.into_iter().map(BillingEntryDto::from).collect(),
+    })
+}
+
+/// Top up (or otherwise set) the vault's total purchased retainer.
+#[tauri::command]
+pub async fn set_retainer_minutes(
+    state: State<'_, AppState>,
+    vault_id: String,
+    minutes: i64,
+) -> Result<(), String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    db.set_retainer_minutes(minutes).await.map_err(|e| e.to_string())
+}
+
+/// Log time worked against a vault's retainer.
+#[tauri::command]
+pub async fn log_billing_entry(
+    state: State<'_, AppState>,
+    vault_id: String,
+    student_id: Option<String>,
+    minutes: i64,
+    description: String,
+    billed_at: String,
+) -> Result<BillingEntryDto, String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    let entry = db
+        .log_billing_entry(student_id.as_deref(), minutes, &description, &billed_at)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(entry.into())
+}
+
+/// Delete a billing ledger entry.
+#[tauri::command]
+pub async fn delete_billing_entry(
+    state: State<'_, AppState>,
+    vault_id: String,
+    id: String,
+) -> Result<(), String> {
+    let vid = VaultId(uuid::Uuid::parse_str(&vault_id).map_err(|e| e.to_string())?);
+    let db = state.vaults.vault(vid).await.map_err(|e| e.to_string())?;
+    db.delete_billing_entry(&id).await.map_err(|e| e.to_string())
 }
 
 /// Ask Quantum Quill inside a chamber. Enforces per-chamber authorization before
