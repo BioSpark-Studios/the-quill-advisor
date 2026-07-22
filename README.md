@@ -1,4 +1,9 @@
-# The Quill Advisor
+<p align="center">
+  <img src="assets/seal-quorum.png" alt="Quantum Quorum — BioSpark Studios" width="400">
+</p>
+
+<h1 align="center">The Quill Advisor</h1>
+
 
 **AI-powered, privacy-centric college-advising studio for independent advisors and small practices.**
 
