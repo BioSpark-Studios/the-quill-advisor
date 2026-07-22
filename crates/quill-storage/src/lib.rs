@@ -23,7 +23,9 @@ pub mod vault_manager;
 pub use core_db::CoreDb;
 pub use error::{Result, StorageError};
 pub use models::VaultRecord;
-pub use vault_db::{EssaySlot, EssayVersion, Milestone, PluginRecord, QaVault, Student, VaultDb};
+pub use vault_db::{
+    BillingEntry, EssaySlot, EssayVersion, Milestone, PluginRecord, QaVault, Student, VaultDb,
+};
 pub use vault_manager::VaultManager;
 
 #[cfg(test)]
@@ -284,6 +286,11 @@ mod tests {
             .commit_essay("common-app", &sid, "draft", "My story...")
             .await
             .unwrap();
+        source.set_retainer_minutes(600).await.unwrap();
+        source
+            .log_billing_entry(Some(&sid), 45, "Essay review call", "2026-07-01")
+            .await
+            .unwrap();
         source.export_qavault(&path).await.unwrap();
         assert!(path.exists());
 
@@ -291,5 +298,42 @@ mod tests {
         restored.import_qavault(&path).await.unwrap();
         assert_eq!(restored.list_students().await.unwrap().len(), 1);
         assert_eq!(restored.essay_history("common-app").await.unwrap().len(), 1);
+        assert_eq!(restored.retainer_minutes().await.unwrap(), 600);
+        assert_eq!(restored.billing_minutes_used().await.unwrap(), 45);
+    }
+
+    #[tokio::test]
+    async fn billing_ledger_tracks_retainer_balance() {
+        let vault = VaultDb::open_in_memory().await.unwrap();
+        // No retainer set yet: balance starts at zero, not an error.
+        assert_eq!(vault.retainer_minutes().await.unwrap(), 0);
+        assert_eq!(vault.billing_minutes_used().await.unwrap(), 0);
+
+        vault.set_retainer_minutes(300).await.unwrap();
+        let sid = vault.add_student("c1", "Riley", None).await.unwrap();
+        let first = vault
+            .log_billing_entry(Some(&sid), 60, "Kickoff session", "2026-07-01")
+            .await
+            .unwrap();
+        vault
+            .log_billing_entry(None, 30, "Prep notes", "2026-07-02")
+            .await
+            .unwrap();
+
+        assert_eq!(vault.retainer_minutes().await.unwrap(), 300);
+        assert_eq!(vault.billing_minutes_used().await.unwrap(), 90);
+
+        let entries = vault.list_billing_entries().await.unwrap();
+        assert_eq!(entries.len(), 2);
+        // Most recent first.
+        assert_eq!(entries[0].description, "Prep notes");
+
+        vault.delete_billing_entry(&first.id).await.unwrap();
+        assert_eq!(vault.billing_minutes_used().await.unwrap(), 30);
+        assert_eq!(vault.list_billing_entries().await.unwrap().len(), 1);
+
+        // Topping up the retainer overwrites the prior value.
+        vault.set_retainer_minutes(600).await.unwrap();
+        assert_eq!(vault.retainer_minutes().await.unwrap(), 600);
     }
 }

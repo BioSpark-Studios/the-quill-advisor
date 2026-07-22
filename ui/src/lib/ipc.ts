@@ -105,6 +105,21 @@ export interface Milestone {
   done: boolean;
 }
 
+export interface BillingEntry {
+  id: string;
+  studentId: string | null;
+  minutes: number;
+  description: string;
+  billedAt: string;
+}
+
+export interface BillingLedger {
+  retainerMinutes: number;
+  usedMinutes: number;
+  balanceMinutes: number;
+  entries: BillingEntry[];
+}
+
 // --- Plugin / Forge types (mirror the Rust manifest JSON) -------------------
 
 export type FieldKind =
@@ -242,6 +257,19 @@ export const api = {
     invoke<Milestone[]>("list_milestones", { vaultId, chamberId }),
   setMilestoneDone: (vaultId: string, id: string, done: boolean) =>
     invoke<void>("set_milestone_done", { vaultId, id, done }),
+  getBillingLedger: (vaultId: string) =>
+    invoke<BillingLedger>("get_billing_ledger", { vaultId }),
+  setRetainerMinutes: (vaultId: string, minutes: number) =>
+    invoke<void>("set_retainer_minutes", { vaultId, minutes }),
+  logBillingEntry: (
+    vaultId: string,
+    studentId: string | null,
+    minutes: number,
+    description: string,
+    billedAt: string,
+  ) => invoke<BillingEntry>("log_billing_entry", { vaultId, studentId, minutes, description, billedAt }),
+  deleteBillingEntry: (vaultId: string, id: string) =>
+    invoke<void>("delete_billing_entry", { vaultId, id }),
 
   // Forge / plugin system
   listAvailablePlugins: () => invoke<AvailablePlugin[]>("list_available_plugins"),
@@ -321,6 +349,13 @@ const mockAi: Record<string, boolean> = {};
 const mockEssays: Record<string, EssayVersion[]> = {};
 const mockMilestones: Record<string, Milestone[]> = {};
 const mockEssaySlots: Record<string, EssaySlot[]> = {};
+const mockRetainer: Record<string, number> = { "v-rivera": 2520, "v-okafor": 1620 };
+const mockBillingEntries: Record<string, BillingEntry[]> = {
+  "v-rivera": [
+    { id: "be-1", studentId: null, minutes: 60, description: "Kickoff session", billedAt: "2026-07-01" },
+    { id: "be-2", studentId: null, minutes: 45, description: "Essay review call", billedAt: "2026-07-10" },
+  ],
+};
 const mockComposition: Record<string, VaultComposition> = {
   "v-rivera": {
     customization: { icon: "🎓", accent: "70 128 103", theme: null },
@@ -445,6 +480,21 @@ const MOCK_BUILTINS: PluginManifest[] = [
     config_schema: [],
     pricing: { type: "free" },
   },
+  {
+    id: "biospark.billing-ledger",
+    name: "Billing & Hours",
+    description: "Track the retainer, hours worked, and running balance.",
+    version: "1.0.0",
+    author: "BioSpark Studios",
+    icon: "🧾",
+    category: "business",
+    scope: "vault",
+    capabilities: ["read_billing", "write_billing"],
+    kind: { type: "native", component: "BillingLedger" },
+    default_layout: { w: 1, h: 1 },
+    config_schema: [],
+    pricing: { type: "free" },
+  },
 ];
 
 const MOCK_STORE: PluginManifest[] = [
@@ -528,6 +578,12 @@ const MOCK_STORE: PluginManifest[] = [
   ),
 ];
 
+function ledgerBalanceHours(vaultId: string): number {
+  const retainer = mockRetainer[vaultId] ?? 0;
+  const used = (mockBillingEntries[vaultId] ?? []).reduce((sum, e) => sum + e.minutes, 0);
+  return Math.round(((retainer - used) / 60) * 10) / 10;
+}
+
 function sortMilestones(list: Milestone[]): Milestone[] {
   return [...list].sort((a, b) => {
     if (a.dueAt === b.dueAt) return 0;
@@ -543,10 +599,17 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     case "health_check":
       return true as T;
     case "get_vault_hierarchy":
-      // Customization is sourced from each vault's composition (the SSoT).
+      // Customization is sourced from each vault's composition (the SSoT);
+      // the hour balance is computed live from the billing ledger, same as
+      // the real backend.
       return mockVaults.map((v) => {
         const c = mockComposition[v.id]?.customization;
-        return { ...v, icon: c?.icon ?? v.icon, accent: c?.accent ?? v.accent };
+        return {
+          ...v,
+          icon: c?.icon ?? v.icon,
+          accent: c?.accent ?? v.accent,
+          hourBalance: ledgerBalanceHours(v.id),
+        };
       }) as T;
     case "create_vault": {
       const id = `v-${Math.random().toString(36).slice(2, 8)}`;
@@ -652,6 +715,45 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       }
       return undefined as T;
     }
+    case "get_billing_ledger": {
+      const vaultId = String(args?.vaultId);
+      const retainerMinutes = mockRetainer[vaultId] ?? 0;
+      const entries = [...(mockBillingEntries[vaultId] ?? [])].sort((a, b) =>
+        a.billedAt < b.billedAt ? 1 : -1,
+      );
+      const usedMinutes = entries.reduce((sum, e) => sum + e.minutes, 0);
+      const ledger: BillingLedger = {
+        retainerMinutes,
+        usedMinutes,
+        balanceMinutes: retainerMinutes - usedMinutes,
+        entries,
+      };
+      return ledger as T;
+    }
+    case "set_retainer_minutes": {
+      mockRetainer[String(args?.vaultId)] = Number(args?.minutes ?? 0);
+      return undefined as T;
+    }
+    case "log_billing_entry": {
+      const vaultId = String(args?.vaultId);
+      const list = mockBillingEntries[vaultId] ?? (mockBillingEntries[vaultId] = []);
+      const entry: BillingEntry = {
+        id: `be-${Math.random().toString(36).slice(2, 8)}`,
+        studentId: (args?.studentId as string | null) ?? null,
+        minutes: Number(args?.minutes ?? 0),
+        description: String(args?.description ?? ""),
+        billedAt: String(args?.billedAt ?? ""),
+      };
+      list.push(entry);
+      return entry as T;
+    }
+    case "delete_billing_entry": {
+      for (const list of Object.values(mockBillingEntries)) {
+        const i = list.findIndex((e) => e.id === args?.id);
+        if (i >= 0) list.splice(i, 1);
+      }
+      return undefined as T;
+    }
     case "list_available_plugins": {
       const builtins: AvailablePlugin[] = MOCK_BUILTINS.map((manifest) => ({
         manifest,
@@ -703,9 +805,20 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       return undefined as T;
     }
     case "invoke_quantum_quill": {
+      // Mirrors the real backend: dispatch is gated by whether the counselor
+      // has enabled Quantum Quill for this chamber.
+      if (!mockAi[String(args?.chamberId)]) {
+        throw new Error("Quantum Quill is not enabled for this chamber.");
+      }
       const prompt = String(args?.prompt ?? "");
+      const isCoaching = prompt.toLowerCase().includes("essay voice coach");
       const reply: ChatReply = {
-        text: `Here's a start on "${prompt.slice(0, 60)}": open with a specific, sensory moment that only you could have written, then connect it to what it revealed about you. (mock reply — connect a live model to see real drafting.)`,
+        text: isCoaching
+          ? "• Strong opening image — keep it, it's specific to you.\n" +
+            "• The middle section summarizes rather than shows; pick one moment and slow down.\n" +
+            "• Your voice comes through clearest in the last two sentences — that tone is the one to write the whole essay in.\n" +
+            "(mock coaching reply — connect a live model for real feedback.)"
+          : `Here's a start on "${prompt.slice(0, 60)}": open with a specific, sensory moment that only you could have written, then connect it to what it revealed about you. (mock reply — connect a live model to see real drafting.)`,
         provider: "mock",
         model: "mock",
       };

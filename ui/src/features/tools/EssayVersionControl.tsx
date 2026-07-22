@@ -56,6 +56,9 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
   const [addingSlot, setAddingSlot] = useState(false);
   const [newSlotLabel, setNewSlotLabel] = useState("");
   const [newSlotLimit, setNewSlotLimit] = useState("");
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [coaching, setCoaching] = useState(false);
 
   async function refresh(id: string) {
     const h = await api.essayHistory(vault.id, id);
@@ -116,6 +119,26 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
   const current = essays.find((e) => e.id === essayId);
   const words = wordCount(draft);
   const overLimit = current?.wordLimit != null && words > current.wordLimit;
+
+  async function getFeedback() {
+    if (!draft.trim() || coaching) return;
+    setCoaching(true);
+    setFeedbackError(null);
+    try {
+      const prompt =
+        "Act as an essay voice coach for a college application. Give focused, encouraging " +
+        "feedback as 3-5 short bullet points on clarity, impact, and whether the voice sounds " +
+        "authentic and specific to this student — don't rewrite it, coach it.\n\n" +
+        `Essay draft:\n"""\n${draft}\n"""`;
+      const reply = await api.askQuill(chamberId, prompt);
+      setFeedback(reply.text);
+    } catch {
+      setFeedback(null);
+      setFeedbackError("Turn on Quantum Quill for this student to get AI feedback.");
+    } finally {
+      setCoaching(false);
+    }
+  }
 
   const diff = useMemo(() => {
     if (selected === null || history.length === 0) return null;
@@ -231,6 +254,14 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
                 className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink outline-none focus:border-primary"
               />
               <button
+                onClick={getFeedback}
+                disabled={coaching || !draft.trim()}
+                className="rounded-lg border border-primary px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-50"
+                title="Get AI feedback on this draft"
+              >
+                {coaching ? "Coaching…" : "🪄 Get feedback"}
+              </button>
+              <button
                 onClick={commit}
                 disabled={busy}
                 className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-surface-raised disabled:opacity-50"
@@ -238,6 +269,30 @@ export function EssayVersionControl({ vault, chamberId, onClose }: PluginProps) 
                 Commit revision
               </button>
             </div>
+            {(feedback || feedbackError) && (
+              <div className="border-b border-border bg-primary/5 p-4">
+                <div className="mb-1 flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-primary">
+                    Essay Voice Coach
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setFeedback(null);
+                      setFeedbackError(null);
+                    }}
+                    className="text-ink-muted hover:text-ink"
+                    aria-label="Dismiss feedback"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {feedbackError ? (
+                  <p className="text-sm text-ink-muted">{feedbackError}</p>
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">{feedback}</p>
+                )}
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto p-4">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 {selected !== null && history[selected]

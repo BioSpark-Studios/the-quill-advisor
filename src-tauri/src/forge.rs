@@ -138,6 +138,21 @@ fn builtin_manifests() -> Vec<PluginManifest> {
             "NarrativeLoom",
             TileLayout { w: 2, h: 1 },
         ),
+        PluginManifest {
+            id: "biospark.billing-ledger".into(),
+            name: "Billing & Hours".into(),
+            description: "Track the retainer, hours worked, and running balance.".into(),
+            version: "1.0.0".into(),
+            author: "BioSpark Studios".into(),
+            icon: "🧾".into(),
+            category: PluginCategory::Business,
+            scope: PluginScope::Vault,
+            capabilities: vec![Capability::ReadBilling, Capability::WriteBilling],
+            kind: PluginKind::Native { component: "BillingLedger".into() },
+            default_layout: TileLayout { w: 1, h: 1 },
+            config_schema: vec![],
+            pricing: Pricing::Free,
+        },
     ]
 }
 

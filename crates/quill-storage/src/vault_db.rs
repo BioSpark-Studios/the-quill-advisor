@@ -68,6 +68,23 @@ pub struct EssaySlot {
     pub word_limit: Option<i64>,
 }
 
+/// One entry in the vault's hour-tracking ledger: time worked against the
+/// family's retainer, optionally attributed to a specific student.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BillingEntry {
+    /// Entry id.
+    pub id: String,
+    /// The student this time was spent on, if attributable to one.
+    pub student_id: Option<String>,
+    /// Minutes of work this entry logs. Stored in minutes for precision;
+    /// the UI converts to hours for display.
+    pub minutes: i64,
+    /// What the time was for (e.g. "Essay review call").
+    pub description: String,
+    /// ISO `YYYY-MM-DD` date the work was done.
+    pub billed_at: String,
+}
+
 /// An application milestone / deadline on a student's timeline.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Milestone {
@@ -308,6 +325,109 @@ impl VaultDb {
         Ok(())
     }
 
+    /// The family's total purchased retainer, in minutes. Defaults to 0 (no
+    /// retainer set yet) so a fresh vault shows an empty ledger rather than
+    /// erroring.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn retainer_minutes(&self) -> Result<i64> {
+        Ok(self
+            .get_meta("billing_retainer_minutes")
+            .await?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0))
+    }
+
+    /// Set the family's total purchased retainer, in minutes (e.g. topping up
+    /// after they buy another block of hours).
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn set_retainer_minutes(&self, minutes: i64) -> Result<()> {
+        self.set_meta("billing_retainer_minutes", &minutes.to_string())
+            .await
+    }
+
+    /// Log time worked against the retainer, returning the new entry.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn log_billing_entry(
+        &self,
+        student_id: Option<&str>,
+        minutes: i64,
+        description: &str,
+        billed_at: &str,
+    ) -> Result<BillingEntry> {
+        let entry = BillingEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            student_id: student_id.map(ToString::to_string),
+            minutes,
+            description: description.to_string(),
+            billed_at: billed_at.to_string(),
+        };
+        sqlx::query(
+            "INSERT INTO billing_entries (id, student_id, minutes, description, billed_at)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&entry.id)
+        .bind(&entry.student_id)
+        .bind(entry.minutes)
+        .bind(&entry.description)
+        .bind(&entry.billed_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(entry)
+    }
+
+    /// List every ledger entry, most recent first.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn list_billing_entries(&self) -> Result<Vec<BillingEntry>> {
+        let rows = sqlx::query(
+            "SELECT id, student_id, minutes, description, billed_at
+             FROM billing_entries ORDER BY billed_at DESC, rowid DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| BillingEntry {
+                id: r.get("id"),
+                student_id: r.get("student_id"),
+                minutes: r.get("minutes"),
+                description: r.get("description"),
+                billed_at: r.get("billed_at"),
+            })
+            .collect())
+    }
+
+    /// Delete a ledger entry.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn delete_billing_entry(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM billing_entries WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Total minutes logged against the retainer so far.
+    ///
+    /// # Errors
+    /// Propagates database errors.
+    pub async fn billing_minutes_used(&self) -> Result<i64> {
+        let used: Option<i64> = sqlx::query("SELECT SUM(minutes) AS used FROM billing_entries")
+            .fetch_one(&self.pool)
+            .await?
+            .get("used");
+        Ok(used.unwrap_or(0))
+    }
+
     /// Add a plugin record into a namespaced collection.
     ///
     /// # Errors
@@ -478,6 +598,8 @@ impl VaultDb {
             format: "qavault/1".to_string(),
             students: self.list_students().await?,
             essays: self.all_essay_versions().await?,
+            retainer_minutes: self.retainer_minutes().await?,
+            billing_entries: self.list_billing_entries().await?,
         };
         let json = serde_json::to_string_pretty(&snapshot)?;
         std::fs::write(out.as_ref(), json)
@@ -521,6 +643,20 @@ impl VaultDb {
             .execute(&self.pool)
             .await?;
         }
+        self.set_retainer_minutes(snapshot.retainer_minutes).await?;
+        for e in &snapshot.billing_entries {
+            sqlx::query(
+                "INSERT OR REPLACE INTO billing_entries (id, student_id, minutes, description, billed_at)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(&e.id)
+            .bind(&e.student_id)
+            .bind(e.minutes)
+            .bind(&e.description)
+            .bind(&e.billed_at)
+            .execute(&self.pool)
+            .await?;
+        }
         Ok(())
     }
 
@@ -553,4 +689,10 @@ pub struct QaVault {
     pub students: Vec<Student>,
     /// All essay revisions in the vault.
     pub essays: Vec<EssayVersion>,
+    /// The family's total purchased retainer, in minutes.
+    #[serde(default)]
+    pub retainer_minutes: i64,
+    /// All billing ledger entries in the vault.
+    #[serde(default)]
+    pub billing_entries: Vec<BillingEntry>,
 }
