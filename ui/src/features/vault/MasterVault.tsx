@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
-import { api, STAGES, type VaultCard, type VaultStage } from "../../lib/ipc";
+import {
+  api,
+  STAGES,
+  type VaultCard,
+  type VaultCustomization,
+  type VaultStage,
+} from "../../lib/ipc";
 import { ThemeSwitcher } from "../../components/ThemeSwitcher";
+import { VaultDialog } from "./VaultDialog";
 import quillMark from "../../assets/logos/crest-the-quill-advisor.png";
 
 /**
@@ -11,6 +18,7 @@ export function MasterVault({ onOpenVault }: { onOpenVault: (v: VaultCard) => vo
   const [vaults, setVaults] = useState<VaultCard[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [creatingStage, setCreatingStage] = useState<VaultStage | null>(null);
 
   useEffect(() => {
     api.listVaults().then((v) => {
@@ -27,10 +35,14 @@ export function MasterVault({ onOpenVault }: { onOpenVault: (v: VaultCard) => vo
     await api.moveVault(id, stage);
   }
 
-  async function createVault(stage: VaultStage) {
-    const name = prompt("Name this vault (e.g. counselor or practice name):");
-    if (!name) return;
-    const card = await api.createVault(name.trim(), stage);
+  async function createVault(
+    name: string,
+    customization: VaultCustomization,
+    template: string[] | undefined,
+  ) {
+    if (!creatingStage) return;
+    const card = await api.createVault(name, creatingStage, customization, template);
+    setCreatingStage(null);
     setVaults((prev) => [...prev, card]);
   }
 
@@ -82,7 +94,7 @@ export function MasterVault({ onOpenVault }: { onOpenVault: (v: VaultCard) => vo
 
                     <button
                       type="button"
-                      onClick={() => createVault(col.id)}
+                      onClick={() => setCreatingStage(col.id)}
                       className="rounded-xl border border-dashed border-border py-3 text-sm text-ink-muted transition-colors hover:border-primary hover:text-primary"
                     >
                       ＋ New Vault
@@ -94,6 +106,10 @@ export function MasterVault({ onOpenVault }: { onOpenVault: (v: VaultCard) => vo
           </div>
         )}
       </main>
+
+      {creatingStage && (
+        <VaultDialog mode="create" onSubmit={createVault} onClose={() => setCreatingStage(null)} />
+      )}
     </div>
   );
 }
@@ -112,11 +128,19 @@ function VaultCardView({
       draggable
       onDragStart={onDragStart}
       onClick={onOpen}
+      style={vault.accent ? ({ ["--primary" as string]: vault.accent } as React.CSSProperties) : undefined}
       className="electric-border group cursor-pointer rounded-xl border border-border bg-surface-raised/80 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-glow"
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-serif text-base leading-snug text-ink">{vault.name}</h3>
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-primary shadow-glow" />
+        <div className="flex items-start gap-2">
+          {vault.icon && (
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-lg">
+              {vault.icon}
+            </span>
+          )}
+          <h3 className="font-serif text-base leading-snug text-ink">{vault.name}</h3>
+        </div>
+        <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-primary shadow-glow" />
       </div>
       <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
         <Stat label="Students" value={vault.students} />
