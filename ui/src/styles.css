@@ -2,8 +2,10 @@
 @config "../tailwind.config.js";
 
 /*
- * Theme tokens. The app defaults to "Forest Whisper" (:root). Selecting
- * "Cyan Holographic" stamps data-theme="cyan" on <html>. Every color in the
+ * Theme tokens. The app defaults to "Quill Midnight" (:root) — colors sampled
+ * directly from the crest artwork (indigo/navy, steel-cyan, gold) so the
+ * product looks like itself rather than borrowing a client's brand palette.
+ * Selecting another theme stamps data-theme on <html>. Every color in the
  * Tailwind config resolves to these RGB channel triples.
  *
  * The attribute selectors are intentionally *not* :root-scoped: a per-vault
@@ -11,14 +13,25 @@
  * re-resolves these tokens independently of the global app theme.
  */
 :root,
-[data-theme="forest"] {
-  --surface: 242 247 244; /* forest-50  #f2f7f4 */
+[data-theme="quill"] {
+  --surface: 11 15 26; /* deep indigo-black #0b0f1a */
+  --surface-raised: 21 27 46; /* #151b2e */
+  --ink: 233 231 245; /* pale lavender-white #e9e7f5 */
+  --ink-muted: 148 144 171;
+  --primary: 74 143 194; /* crest steel-cyan #4a8fc2 */
+  --accent: 230 200 110; /* crest banner gold #e6c86e */
+  --border: 38 44 66;
+  color-scheme: dark;
+}
+
+[data-theme="parchment"] {
+  --surface: 247 243 234; /* warm parchment #f7f3ea */
   --surface-raised: 255 255 255;
-  --ink: 26 46 38; /* deep forest ink */
-  --ink-muted: 90 114 104;
-  --primary: 70 128 103; /* forest-500 #468067 */
-  --accent: 217 119 6; /* whisper amber #d97706 */
-  --border: 210 227 219;
+  --ink: 36 31 61; /* deep indigo ink #241f3d, echoes the crest background */
+  --ink-muted: 107 100 131;
+  --primary: 61 110 165; /* crest steel-cyan, deepened for contrast on light */
+  --accent: 133 95 26; /* crest banner gold, deepened for contrast on light */
+  --border: 227 219 200;
   color-scheme: light;
 }
 

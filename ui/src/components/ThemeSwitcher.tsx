@@ -1,6 +1,6 @@
 import { THEMES, useTheme } from "../theme";
 
-/** Runtime toggle between Forest Whisper and Cyan Holographic. */
+/** Runtime toggle between the app's themes. */
 export function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();
   return (
