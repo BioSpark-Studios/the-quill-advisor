@@ -5,11 +5,11 @@ import {
   VAULT_TEMPLATES,
   type VaultCustomization,
 } from "../../lib/ipc";
+import { THEMES } from "../../theme";
 
 const THEME_CHOICES: { id: string | null; label: string }[] = [
   { id: null, label: "App default" },
-  { id: "forest", label: "Forest Whisper" },
-  { id: "cyan", label: "Cyan Holographic" },
+  ...THEMES,
 ];
 
 /**
